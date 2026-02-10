@@ -6,13 +6,15 @@ use crate::sha3::types::new_state;
 use crate::sha3::utils;
 use crate::sha3::utils::bitstring_to_state;
 use crate::sha3::utils::concat_bitstrings;
+use crate::sha3::utils::debug_state_as_bytes;
+use crate::sha3::utils::debug_state_as_lanes_of_integers;
 use crate::sha3::utils::new_bitstring;
 use crate::sha3::utils::prepend_zero;
 use crate::sha3::utils::state_to_bitstring;
 use crate::sha3::utils::trunc;
 use crate::sha3::utils::xor_bitstrings;
 
-/// 1st transformation function (Alg 1.)
+/// 1st transformation function (Alg 1., p.11)
 fn theta(A: &State) -> State {
     let w = A.len();
 
@@ -47,7 +49,8 @@ fn theta(A: &State) -> State {
     A1
 }
 
-/// 2nd transformation function (Alg 2.)
+
+/// 2nd transformation function (Alg 2., p.12)
 fn rho(A: &State) -> State {
     let w = A.len();
     let mut A1 = new_state(w);
@@ -58,9 +61,17 @@ fn rho(A: &State) -> State {
     }
 
     //Step 2.
-    let (mut x, mut y) = (0, 1);
+    let (mut x, mut y) = (1, 0);
     
-    //Step 3.  For t from 0 to 23:  //FIXME clarify boundary condition
+    //Step 3.  For t from 0 to 23:
+    // see Table 2 on p.13; Offsets of Rho 
+    const RHO_OFFSETS: [[i32; 5] ;5] = [ // [x][y]
+        [0, 36, 3, 105, 210],
+        [1, 300, 10, 45, 66],
+        [190, 6, 171, 15, 253],
+        [28, 55, 153, 21, 120],
+        [91, 276, 231, 136, 78]
+    ];
     for t in 0..24 {
         for z in 0..w {
             let zi = z as i32;
@@ -70,9 +81,10 @@ fn rho(A: &State) -> State {
                 z1 += wi;
             }
             assert!(z1>=0);
+            assert_eq!(z1, (zi - RHO_OFFSETS[x][y] + 5*wi) % wi);
             A1[z][x][y] = A[z1 as usize][x][y];
-            (x, y) = (y, (2*x + 3*y) % 5); // FIXME clarify if this works correctly
         }
+        (x, y) = (y, (2*x + 3*y) % 5); // FIXME clarify if this works correctly
     }
 
     // Step 3. Return A1
@@ -185,11 +197,17 @@ fn iota(A: &State, ir: usize) -> State {
 
 /// Rnd function (see page 16, Sec. 3.3, of the specs).
 fn rnd(A: &State, ir: usize) -> State {
+    // println!("Round {ir}\n");
     let A1 = theta(A);
+    // debug_state_as_bytes("After Theta", &A1);
     let A2 = rho(&A1);
+    // debug_state_as_bytes("After Rho", &A2);
     let A3 = pi(&A2);
+    // debug_state_as_bytes("After Pi", &A3);
     let A4 = chi(&A3);
+    // debug_state_as_bytes("After Chi", &A4);
     let A5 = iota(&A4, ir);
+    // debug_state_as_bytes("After Iota", &A5);
     A5
 }
 
@@ -202,17 +220,20 @@ fn rnd(A: &State, ir: usize) -> State {
 // nr : number of rounds
 //
 // s : an input string of length b; represented as an array of bytes
-fn keccak_p(b: usize, nr: usize, S: &BitString) -> BitString {
+fn keccak_p(b: usize, nr: usize, S: &BitString) -> BitString {    
     // hardcoded values of b, w, el, for SHA3
     assert!(b==1600);
     // these are derived from b and nr
     //const w: u32 = 64;
     const el: usize = 6;
-
-    assert_eq!(b as usize, S.len());
+    assert_eq!(b, S.len());    
 
     // Step 1. Convert S to A
     let mut A = bitstring_to_state(S);
+
+    // debug_state_as_bytes("keccak_p / Step 1 / A", &A);
+    // debug_state_as_lanes_of_integers("keccak_p / Step 1 / A", &A);
+
     // Step 2.   ir  from (12 + 2 el – nr) to  (12 + 2 el – 1)
     for ir in ((12 + 2 * el - nr)..(12 + 2 * el)) {
         A = rnd(&A, ir);
@@ -267,7 +288,7 @@ fn keccak(keccak_c: usize, N: &BitString, d: usize) -> BitString {
     }
     
     //Step 7.
-    let mut Z = BitString::new(); // can we estiate the max capacity?
+    let mut Z = BitString::new(); // can we estimate the max capacity?
     
     loop {
         //Step 8.
@@ -332,11 +353,12 @@ pub fn sha3_512(m: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+        
+
     #[test]
     fn test_empty_string(){
         let bytes0 = "".as_bytes();
-        let digest = sha3_256(bytes0);
+        let digest = sha3_256(bytes0).to_ascii_lowercase();
         println!("Digest for empty string : {digest}");
 
         let expected = "a7ffc6f8bf1ed76651c14756a061d662f580ff4de43b49fa82d80a4b80f8434a";

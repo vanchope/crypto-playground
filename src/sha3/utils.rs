@@ -4,6 +4,8 @@ use crate::sha3::types::BitString;
 use crate::sha3::types::ByteString;
 
 
+// FIXME clarify the conversion byte to bit and vise versa!
+
 /// Converts an array of bytes to an array of bits, where each bit is of type u8.
 /// 
 /// [4] ==> \[00000100\] => \[0, 0, 0, 0, 0, 1, 0, 0\]
@@ -12,7 +14,8 @@ pub fn bytestr_to_bitstring(bytes: &[u8]) -> BitString {
     let mut bits = BitString::new();
     for i in 0..bytes_len {
         for offset in 0..8 {
-            let bit =  (bytes[i] >> (7-offset)) & 1;
+            //let bit =  (bytes[i] >> (7-offset)) & 1;
+            let bit =  (bytes[i] >> offset) & 1;
             bits.push(bit);
         }
     }
@@ -30,16 +33,17 @@ pub fn bitstring_to_bytestr(bits: &[u8]) -> ByteString {
         let mut byte: u8 = 0;
         for offset in 0..8 {
             let bit = bits[8*i + offset];
-            byte |= bit << (7-offset);
+            //byte |= bit << (7-offset);
+            byte |= bit << offset;
         }
         res.push(byte);
     }
     res
 }
 
-/// Encodes a byte into 2-characters 0-0a-f.
-pub fn encode_hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|c| format!("{:02x}", c)).collect()
+/// Encodes bytes into 2-characters 0-0a-f.
+pub fn encode_hex(bytes: &ByteString) -> String {
+    bytes.iter().map(|c| format!("{:02X}", c)).collect()
 }
 
 
@@ -156,6 +160,48 @@ pub fn concat_bitstrings(bs0: &BitString, bs1: &BitString) -> BitString {
 }
 
 
+pub fn debug_state_as_bytes(title: &str, A: &State) {
+    let w = A.len();
+    let len_bytes = w * 5 * 5 / 8;
+    let bit_str = state_to_bitstring(A);
+    let byte_str = bitstring_to_bytestr(&bit_str);
+    let hex = encode_hex(&byte_str);
+    //println!("{title} : \n{hex}");
+    println!("{title} :");
+
+    for i in 0..len_bytes {
+        let substr = &hex[2*i..2*i+2];
+        print!("{substr} ");
+        if i>0 && i%16==15 {
+            println!();
+        }
+    }
+    println!();
+}
+
+pub fn debug_state_as_lanes_of_integers(title: &str, A: &State) {
+    let w = A.len();
+    assert!(w==64);
+    println!("{title} (as lanes):");
+    for x in  0..5 {
+        for y in 0..5 {
+            let mut lane_bits = BitString::new();
+            for z in 0..w {
+                lane_bits.push(A[z][x][y]);
+            }
+            //lane_bits.reverse(); // THIS IS a TRICKY PART to display a0 a1 a2 ... as integers  ...a2a1a0.
+            let mut lane_u64: u64 = 0;
+            for z in 0..w {
+                lane_u64 |= (lane_bits[z] as u64 & 1) << z;
+            }
+            // let lane_bytes = bitstring_to_bytestr(&lane_bits);
+            // let lane_hex = encode_hex(&lane_bytes);
+            println!("  [{x}][{y}] = {lane_u64:016X}");
+        }
+    }
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -188,6 +234,8 @@ mod tests {
         println!("debug -- end of state");
     }
 
+    
+
     fn test_with_string(s: &str){
         let bytes = s.as_bytes();
         debug_vec("input string as bytes", bytes);
@@ -209,8 +257,8 @@ mod tests {
 
     #[test]
     fn test_bytestr_to_hex(){
-        let bytes: [u8; 4] = [0, 10, 32, 255];
-        let hex = encode_hex(bytes.as_slice());
+        let bytes = ByteString::from([0, 10, 32, 255]);
+        let hex = encode_hex(&bytes);
         println!("{hex}");
         assert_eq!(hex, "000a20ff");
 
@@ -231,7 +279,8 @@ mod tests {
         debug_vec("S", S.as_slice());
 
         let A = bitstring_to_state(&S);
-        debug_state("A", &A);
+        //debug_state("A", &A);
+        debug_state_as_bytes("A", &A);
 
         let S1 = state_to_bitstring(&A);
         assert_eq!(S1.as_slice(), S.as_slice());
