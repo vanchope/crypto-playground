@@ -353,15 +353,20 @@ pub fn sha3_512(m: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-        
+
+    fn test_on_input(bytes0: &[u8], expected_digest: &str){
+        let computed_digest = sha3_256(bytes0).to_lowercase();
+        println!("Digest for bytes {bytes0:?} : {computed_digest}");
+        assert_eq!(&expected_digest.to_lowercase(), &computed_digest);
+    }
 
     #[test]
     fn test_empty_string(){
-        let bytes0 = "".as_bytes();
-        let digest = sha3_256(bytes0).to_ascii_lowercase();
-        println!("Digest for empty string : {digest}");
+        test_on_input(&[], "a7ffc6f8bf1ed76651c14756a061d662f580ff4de43b49fa82d80a4b80f8434a");
+    }
 
-        let expected = "a7ffc6f8bf1ed76651c14756a061d662f580ff4de43b49fa82d80a4b80f8434a";
-        assert_eq!(expected, &digest);
+    #[test]
+    fn test_5_bits(){
+        test_on_input(&[1, 1, 0, 0, 1], "7B0047CF5A456882363CBF0FB05322CF65F4B7059A46365E830132E3B5D957AF");
     }
 }
