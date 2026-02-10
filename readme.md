@@ -1,0 +1,1 @@
+Test vectors copied from https://github.com/pyca/cryptography/tree/main/vectors/cryptography_vectors/hashes/SHA3.

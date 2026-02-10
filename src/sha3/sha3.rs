@@ -1,0 +1,345 @@
+
+use crate::sha3::types::State;
+use crate::sha3::types::BitString;
+use crate::sha3::types::new_plane;
+use crate::sha3::types::new_state;
+use crate::sha3::utils;
+use crate::sha3::utils::bitstring_to_state;
+use crate::sha3::utils::concat_bitstrings;
+use crate::sha3::utils::new_bitstring;
+use crate::sha3::utils::prepend_zero;
+use crate::sha3::utils::state_to_bitstring;
+use crate::sha3::utils::trunc;
+use crate::sha3::utils::xor_bitstrings;
+
+/// 1st transformation function (Alg 1.)
+fn theta(A: &State) -> State {
+    let w = A.len();
+
+    //Step 1.
+    let mut C = new_plane(w);
+    for x in 0..5 {
+        for z in 0..w {
+            C[z][x] = A[z][x][0] ^ A[z][x][1] ^ A[z][x][2] ^ A[z][x][3] ^ A[z][x][4];
+        }
+    }
+
+    // Step 2.
+    let mut D = new_plane(w);
+    for x in 0..5 {
+        for z in 0..w {
+            let xi = x as i32;
+            let wi = w as i32;
+            let zi = z as i32;
+            D[z][x] = C[z][((xi-1+5) % 5) as usize] ^ C[((zi-1+wi) % wi)as usize][(x+1) % 5];
+        }
+    }
+
+    // Step 3.
+    let mut A1 = new_state(w);
+    for x in 0..5 {
+        for y in 0..5 {
+            for z in 0..w {
+                A1[z][x][y] = A[z][x][y] ^ D[z][x];
+            }
+        }
+    }        
+    A1
+}
+
+/// 2nd transformation function (Alg 2.)
+fn rho(A: &State) -> State {
+    let w = A.len();
+    let mut A1 = new_state(w);
+    
+    //Step 1.
+    for z in 0..w {
+        A1[z][0][0] = A[z][0][0];
+    }
+
+    //Step 2.
+    let (mut x, mut y) = (0, 1);
+    
+    //Step 3.  For t from 0 to 23:  //FIXME clarify boundary condition
+    for t in 0..24 {
+        for z in 0..w {
+            let zi = z as i32;
+            let wi = w as i32;
+            let mut z1 = (zi - (t+1)*(t+2)/2) % wi;
+            if z1 < 0 {
+                z1 += wi;
+            }
+            assert!(z1>=0);
+            A1[z][x][y] = A[z1 as usize][x][y];
+            (x, y) = (y, (2*x + 3*y) % 5); // FIXME clarify if this works correctly
+        }
+    }
+
+    // Step 3. Return A1
+    A1
+}
+
+
+/// 3rd transformation (Alg 3.)
+fn pi(A: &State) -> State {
+    let w = A.len();
+    let mut A1 = new_state(w);
+    for x in 0..5 {
+        for y in 0..5 {
+            for z in 0..w {
+                A1[z][x][y] = A[z][(x + 3*y) % 5][x];
+            }
+        }
+    }
+    A1
+}
+
+/// 4th transformation function (Alg 4.)
+fn chi(A: &State) -> State {
+    let w = A.len();
+    let mut A1 = new_state(w);
+    for x in 0..5 {
+        for y in 0..5 {
+            for z in 0..w {
+                let tmp1 = A[z][(x+1) % 5][y] ^ 1;
+                let tmp2 = A[z][(x+2) % 5][y];
+                let tmp = tmp1 * tmp2;
+                A1[z][x][y] = A[z][x][y] ^ tmp;
+            }
+        }
+    }
+    A1
+}
+
+
+/// RC function (Alg.5), which returns a bit.
+/// 
+/// input t: integer.
+/// 
+///    This function is used in Alg. 6 with non-negative values of t.
+fn rc(t: usize) -> u8 {
+    
+    // Step 1.
+    if t % 255 == 0 {
+        return 1
+    }
+    
+    // Step 2.   R = 1 0 0 0 0 0 0 0   (8 bits with R[0]=1, rest are 0s).
+    let mut R = BitString::new();
+    R.push(1);
+    for _i in 1..8 {
+        R.push(0);
+    }
+
+    // Step 3.  For i from 1 to t mod 255, let: <...>
+    let t_mod = t % 255;
+    for i in 1..t_mod+1 { // FIXME clarify the boundary condition
+        R = prepend_zero(&R);
+        R[0] = R[0] ^ R[8];
+        R[4] = R[4] ^ R[8];
+        R[5] = R[5] ^ R[8];
+        R[6] = R[6] ^ R[8];
+        R = trunc(8, &R);
+    }
+
+    // Step 4. Return R[0]
+    R[0]
+}
+
+
+/// 5th transformation (Alg 6.)
+fn iota(A: &State, ir: usize) -> State {
+    let w = A.len();
+    
+    // Hardcoded constants for SHA-3
+    assert!(w==64);
+    const el: usize = 6;
+
+    let mut A1 = new_state(w);
+
+    //Step 1.
+    for x in 0..5 {
+        for y in 0..5 {
+            for z in 0..w {
+                A1[z][x][y] = A[z][x][y];
+            }
+        }
+    }
+
+    //Step 2.
+    let mut RC = new_bitstring(w);
+
+    // Step 3. For j from 0 to l, let RC[2**j – 1] = rc(j + 7ir)
+    for j in 0..(el+1) { // FIXME clarify boundary conditions
+        RC[(1<<j)-1] = rc(j + 7 * ir);
+    }
+
+    // Step 4.
+    for z in 0..w {
+        A1[z][0][0] = A1[z][0][0] ^ RC[z];
+    }
+
+    // Step 5. Return A'
+    A1
+}
+
+/// Rnd function (see page 16, Sec. 3.3, of the specs).
+fn rnd(A: &State, ir: usize) -> State {
+    let A1 = theta(A);
+    let A2 = rho(&A1);
+    let A3 = pi(&A2);
+    let A4 = chi(&A3);
+    let A5 = iota(&A4, ir);
+    A5
+}
+
+// Alg 7.
+//
+// b : width, the fixed length of the permuted strings
+// it can be one of {25, 50, 100, 200, 400, 800, 1600}
+// it maps to a 5 x 5 x w state.
+//
+// nr : number of rounds
+//
+// s : an input string of length b; represented as an array of bytes
+fn keccak_p(b: usize, nr: usize, S: &BitString) -> BitString {
+    // hardcoded values of b, w, el, for SHA3
+    assert!(b==1600);
+    // these are derived from b and nr
+    //const w: u32 = 64;
+    const el: usize = 6;
+
+    assert_eq!(b as usize, S.len());
+
+    // Step 1. Convert S to A
+    let mut A = bitstring_to_state(S);
+    // Step 2.   ir  from (12 + 2 el – nr) to  (12 + 2 el – 1)
+    for ir in ((12 + 2 * el - nr)..(12 + 2 * el)) {
+        A = rnd(&A, ir);
+    }    
+    // Step 3. Convert A to S' of length b
+    let s1 = state_to_bitstring(&A);
+    assert_eq!(s1.len(), b as usize);
+    s1
+}
+
+// we hardcode Sponge function here, as their paramters are mostly fixed (except "c") as per Sec.5.2
+//     KECCAK[c] = SPONGE[KECCAK-p[1600, 24], pad10*1, 1600 – c].
+//
+//   where SPONGE is defined in Alg. 8 as   
+//            SPONGE[f, pad, r](N, d)
+//
+// c : 
+fn keccak(keccak_c: usize, N: &BitString, d: usize) -> BitString {
+    const b: usize = 1600;
+    const nr: usize = 24;
+    assert!(b > keccak_c);
+    let r: usize = b - keccak_c;
+
+    //Step 1 of SPONGE
+    let pad = pad101(r as i32, N.len() as i32);
+    let mut P = BitString::from(N.as_slice());
+    pad.iter().for_each(|el| P.push(*el)); // P = N || pad
+    
+    //Steps 2-3
+    let n = P.len() / r;
+    let c = b - r; // === keccak_c
+
+    //Step 4. Split P to n substrings of len r
+    let mut Ps: Vec<BitString> = Vec::new();
+    for i in 0..n {
+        let slice = &P[r*i..r*(i+1)];
+        let mut Pi = BitString::new();
+        slice.iter().for_each(|el| Pi.push(*el));
+        //assert_eq!(Pi.len(), r);
+        Ps.push(Pi);
+    }   
+
+    //Step 5.
+    let mut S = new_bitstring(b);
+
+    //Step 6.  For i from 0 to n-1, let <..>
+    for i in 0..n { // FIXME clarify the boundary conditions
+        let zero = new_bitstring(c);
+        let Pi_zero = concat_bitstrings(&Ps[i], &zero);
+        let f_input = xor_bitstrings(&S, &Pi_zero);
+        S = keccak_p(b, nr, &f_input);
+    }
+    
+    //Step 7.
+    let mut Z = BitString::new(); // can we estiate the max capacity?
+    
+    loop {
+        //Step 8.
+        Z = concat_bitstrings(&Z, &trunc(r, &S));
+
+        //Step 9.
+        if d <= Z.len() {
+            return trunc(d, &Z)
+        }
+
+        //Step 10. update S and go to Step 8
+        S = keccak_p(b, nr, &S);
+    }
+
+}
+
+// Alg. 9
+// output a string of the form 10*1
+fn pad101(x: i32,  m: i32) -> BitString {
+    let mut j = (-m -2) % x; 
+    if j<0 {
+        j += x;
+    }
+    assert!(j>=0);
+    let mut res = BitString::new();
+    res.push(1);
+    for _ in 0..j {
+        res.push(0);
+    }
+    res.push(1);
+    res
+}
+
+// two-bit suffixes are applied to M in the sha3 functions below
+
+pub fn sha3_224(m: &str) -> BitString {
+    todo!()
+}
+
+/// The function is defined as follows: SHA3-256(M) = KECCAK [512] (M || 01, 256)
+pub fn sha3_256(m: &[u8]) -> String {
+    let len_bytes = m.len();
+    println!("calling sha3_256 for an input of size {len_bytes} bytes...");
+    let mut n = utils::bytestr_to_bitstring(m);
+    n.push(0);
+    n.push(1);
+    let digest_bits = keccak(512, &n, 256);
+    let digest_bytes = utils::bitstring_to_bytestr(&digest_bits);
+    let digest_hex = utils::encode_hex(&digest_bytes);
+    digest_hex
+}
+
+pub fn sha3_384(m: &str) -> String {
+    todo!()
+}
+
+pub fn sha3_512(m: &str) -> String {
+    todo!()
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    
+    #[test]
+    fn test_empty_string(){
+        let bytes0 = "".as_bytes();
+        let digest = sha3_256(bytes0);
+        println!("Digest for empty string : {digest}");
+
+        let expected = "a7ffc6f8bf1ed76651c14756a061d662f580ff4de43b49fa82d80a4b80f8434a";
+        assert_eq!(expected, &digest);
+    }
+}
