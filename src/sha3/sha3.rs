@@ -462,5 +462,15 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn test_read_file(){
+        use std::fs;
+        let filename = "test/test_file.txt";
+        let data = fs::read(filename).unwrap();
+        let data_bytes = data.len();
+        let computed_digest = sha3_256(&data).to_lowercase();
+        println!("reading file '{filename}' => len {data_bytes} bytes; bytes => {data:?} \n: digest = {computed_digest}");
+    }
  
 }
