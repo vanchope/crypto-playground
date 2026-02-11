@@ -322,31 +322,32 @@ fn pad101(x: i32,  m: i32) -> BitString {
     res
 }
 
-// two-bit suffixes are applied to M in the sha3 functions below
-
-pub fn sha3_224(m: &str) -> BitString {
-    todo!()
-}
-
-/// The function is defined as follows: SHA3-256(M) = KECCAK [512] (M || 01, 256)
-pub fn sha3_256(m: &[u8]) -> String {
-    let len_bytes = m.len();
-    println!("calling sha3_256 for an input of size {len_bytes} bytes...");
+// two-bit suffixes are applied to M in the sha3 family of functions
+pub fn sha3_family(m: &[u8], keccak_c: usize, keccak_d: usize) -> String {
     let mut n = utils::bytestr_to_bitstring(m);
     n.push(0);
     n.push(1);
-    let digest_bits = keccak(512, &n, 256);
+    let digest_bits = keccak(keccak_c, &n, keccak_d);
     let digest_bytes = utils::bitstring_to_bytestr(&digest_bits);
     let digest_hex = utils::encode_hex(&digest_bytes);
     digest_hex
 }
 
-pub fn sha3_384(m: &str) -> String {
-    todo!()
+pub fn sha3_224(m:  &[u8]) -> String {
+    sha3_family(m, 448, 224)
 }
 
-pub fn sha3_512(m: &str) -> String {
-    todo!()
+/// The function is defined as follows: SHA3-256(M) = KECCAK [512] (M || 01, 256)
+pub fn sha3_256(m: &[u8]) -> String {
+    sha3_family(m, 512, 256)
+}
+
+pub fn sha3_384(m: &[u8]) -> String {
+    sha3_family(m,  768, 384)
+}
+
+pub fn sha3_512(m: &[u8]) -> String {
+    sha3_family(m,  1024, 512)
 }
 
 
@@ -356,15 +357,21 @@ mod tests {
 
     use super::*;
 
-    fn test_on_input(bytes: &[u8], expected_digest: &str){
+    fn test_sha256_on_input(bytes: &[u8], expected_digest: &str){
         let computed_digest = sha3_256(bytes).to_lowercase();
+        println!("Digest for bytes {bytes:?} : {computed_digest}");
+        assert_eq!(&expected_digest.to_lowercase(), &computed_digest);
+    }
+
+    fn test_sha512_on_input(bytes: &[u8], expected_digest: &str){
+        let computed_digest = sha3_512(bytes).to_lowercase();
         println!("Digest for bytes {bytes:?} : {computed_digest}");
         assert_eq!(&expected_digest.to_lowercase(), &computed_digest);
     }
 
     #[test]
     fn test_empty_string(){
-        test_on_input(&[], "a7ffc6f8bf1ed76651c14756a061d662f580ff4de43b49fa82d80a4b80f8434a");
+        test_sha256_on_input(&[], "a7ffc6f8bf1ed76651c14756a061d662f580ff4de43b49fa82d80a4b80f8434a");
     }
 
     
@@ -375,7 +382,7 @@ mod tests {
 
     #[test]
     fn test_2_bytes(){
-        test_on_input(&decode_hex("e9").unwrap(), "f0d04dd1e6cfc29a4460d521796852f25d9ef8d28b44ee91ff5b759d72c1e6d6");
+        test_sha256_on_input(&decode_hex("e9").unwrap(), "f0d04dd1e6cfc29a4460d521796852f25d9ef8d28b44ee91ff5b759d72c1e6d6");
     }
 
 
@@ -389,7 +396,7 @@ mod tests {
     }
 
     #[test]
-    fn test_rsp_file(){
+    fn test_rsp_256_file(){
         let filename = "test_vectors/SHA3/SHA3_256ShortMsg.rsp";
         let lines = read_lines(filename);
         let n = lines.len();                
@@ -401,22 +408,57 @@ mod tests {
                 let len_bytes: i32 = line.split("=").skip(1).next().unwrap().trim().parse().unwrap();
                 
                 let line_msg = &lines[i+1];
-                let msg = line_msg.split("=").skip(1).next().unwrap().trim();
-                let msg_len = msg.len();
+                let msg_hex = line_msg.split("=").skip(1).next().unwrap().trim();
+                let msg_len = msg_hex.len();
                 if len_bytes > 0 {  // len 0 test has input msg as 00.
                     assert_eq!(msg_len * 4, len_bytes as usize);
-                }else{
-                    continue;
                 }
                 
                 let line_md = &lines[i+2];
                 let md = line_md.split("=").skip(1).next().unwrap().trim();
 
-                println!("Found test: Len = {len_bytes}, Msg [of len {msg_len}] = {msg}");
+                println!("Found test: Len = {len_bytes}, Msg [of len {msg_len}] = {msg_hex}");
                 println!("expected MD = '{md}'");
 
-                let decoded_input = decode_hex(msg).unwrap();
-                test_on_input(&decoded_input, md);
+                let decoded_input = decode_hex(msg_hex).unwrap();
+                // this takes care of len 0 test case that has input msg as 00 (msg len and Len mismatch).
+                let decoded_input_corrected = &decoded_input[0..(len_bytes/8) as usize];
+                test_sha256_on_input(&decoded_input_corrected, md);
+            }
+        }
+    }
+
+
+    // THIS COPY PASTE from SHA-256 version LOOKS UGLY, refactoring is needed
+    #[test]
+    fn test_rsp_512_file(){
+        let filename = "test_vectors/SHA3/SHA3_512ShortMsg.rsp";
+        let lines = read_lines(filename);
+        let n = lines.len();                
+        println!("file read {filename} -> {n} lines");
+
+        for i in 0..n-2 {
+            let line = &lines[i];
+            if line.starts_with("Len") {
+                let len_bytes: i32 = line.split("=").skip(1).next().unwrap().trim().parse().unwrap();
+                
+                let line_msg = &lines[i+1];
+                let msg_hex = line_msg.split("=").skip(1).next().unwrap().trim();
+                let msg_len = msg_hex.len();
+                if len_bytes > 0 {  // len 0 test has input msg as 00.
+                    assert_eq!(msg_len * 4, len_bytes as usize);
+                }
+                
+                let line_md = &lines[i+2];
+                let md = line_md.split("=").skip(1).next().unwrap().trim();
+
+                println!("Found test: Len = {len_bytes}, Msg [of len {msg_len}] = {msg_hex}");
+                println!("expected MD = '{md}'");
+
+                let decoded_input = decode_hex(msg_hex).unwrap();
+                // this takes care of len 0 test case that has input msg as 00 (msg len and Len mismatch).
+                let decoded_input_corrected = &decoded_input[0..(len_bytes/8) as usize];
+                test_sha512_on_input(&decoded_input_corrected, md);
             }
         }
     }
