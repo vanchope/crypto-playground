@@ -357,21 +357,22 @@ mod tests {
 
     use super::*;
 
-    fn test_sha256_on_input(bytes: &[u8], expected_digest: &str){
-        let computed_digest = sha3_256(bytes).to_lowercase();
+    fn test_sha3_on_input(bytes: &[u8], expected_digest: &str, sha3_variant: &str){
+        //let sha_variant = 256;
+        let computed_digest = match sha3_variant {
+            "sha3-224" => sha3_224(bytes),
+            "sha3-256" => sha3_256(bytes),
+            "sha3-384" => sha3_384(bytes),
+            "sha3-512" => sha3_512(bytes),
+            _ => panic!()
+        };
         println!("Digest for bytes {bytes:?} : {computed_digest}");
-        assert_eq!(&expected_digest.to_lowercase(), &computed_digest);
-    }
-
-    fn test_sha512_on_input(bytes: &[u8], expected_digest: &str){
-        let computed_digest = sha3_512(bytes).to_lowercase();
-        println!("Digest for bytes {bytes:?} : {computed_digest}");
-        assert_eq!(&expected_digest.to_lowercase(), &computed_digest);
-    }
+        assert_eq!(&expected_digest.to_lowercase(), &computed_digest.to_lowercase());
+    }    
 
     #[test]
     fn test_empty_string(){
-        test_sha256_on_input(&[], "a7ffc6f8bf1ed76651c14756a061d662f580ff4de43b49fa82d80a4b80f8434a");
+        test_sha3_on_input(&[], "a7ffc6f8bf1ed76651c14756a061d662f580ff4de43b49fa82d80a4b80f8434a", "sha3-256");
     }
 
     
@@ -382,7 +383,7 @@ mod tests {
 
     #[test]
     fn test_2_bytes(){
-        test_sha256_on_input(&decode_hex("e9").unwrap(), "f0d04dd1e6cfc29a4460d521796852f25d9ef8d28b44ee91ff5b759d72c1e6d6");
+        test_sha3_on_input(&decode_hex("e9").unwrap(), "f0d04dd1e6cfc29a4460d521796852f25d9ef8d28b44ee91ff5b759d72c1e6d6", "sha3-256");
     }
 
 
@@ -394,10 +395,9 @@ mod tests {
             .map(String::from)  // make each slice into a string
             .collect()  // gather them together into a vector
     }
-
-    #[test]
-    fn test_rsp_256_file(){
-        let filename = "test_vectors/SHA3/SHA3_256ShortMsg.rsp";
+    
+    fn test_rsp_file(filename: &str, sha3_variant: &str){
+        //let filename = ;
         let lines = read_lines(filename);
         let n = lines.len();                
         println!("file read {filename} -> {n} lines");
@@ -423,44 +423,31 @@ mod tests {
                 let decoded_input = decode_hex(msg_hex).unwrap();
                 // this takes care of len 0 test case that has input msg as 00 (msg len and Len mismatch).
                 let decoded_input_corrected = &decoded_input[0..(len_bytes/8) as usize];
-                test_sha256_on_input(&decoded_input_corrected, md);
+                test_sha3_on_input(&decoded_input_corrected, md, sha3_variant);
             }
         }
     }
 
 
-    // THIS COPY PASTE from SHA-256 version LOOKS UGLY, refactoring is needed
+    #[test]
+    fn test_rsp_224_file(){
+        test_rsp_file("test_vectors/SHA3/SHA3_224ShortMsg.rsp", "sha3-224");
+    }
+
+    #[test]
+    fn test_rsp_256_file(){
+        test_rsp_file("test_vectors/SHA3/SHA3_256ShortMsg.rsp", "sha3-256");
+    }
+
+
+    #[test]
+    fn test_rsp_384_file(){
+        test_rsp_file("test_vectors/SHA3/SHA3_384ShortMsg.rsp", "sha3-384");
+    }
+
     #[test]
     fn test_rsp_512_file(){
-        let filename = "test_vectors/SHA3/SHA3_512ShortMsg.rsp";
-        let lines = read_lines(filename);
-        let n = lines.len();                
-        println!("file read {filename} -> {n} lines");
-
-        for i in 0..n-2 {
-            let line = &lines[i];
-            if line.starts_with("Len") {
-                let len_bytes: i32 = line.split("=").skip(1).next().unwrap().trim().parse().unwrap();
-                
-                let line_msg = &lines[i+1];
-                let msg_hex = line_msg.split("=").skip(1).next().unwrap().trim();
-                let msg_len = msg_hex.len();
-                if len_bytes > 0 {  // len 0 test has input msg as 00.
-                    assert_eq!(msg_len * 4, len_bytes as usize);
-                }
-                
-                let line_md = &lines[i+2];
-                let md = line_md.split("=").skip(1).next().unwrap().trim();
-
-                println!("Found test: Len = {len_bytes}, Msg [of len {msg_len}] = {msg_hex}");
-                println!("expected MD = '{md}'");
-
-                let decoded_input = decode_hex(msg_hex).unwrap();
-                // this takes care of len 0 test case that has input msg as 00 (msg len and Len mismatch).
-                let decoded_input_corrected = &decoded_input[0..(len_bytes/8) as usize];
-                test_sha512_on_input(&decoded_input_corrected, md);
-            }
-        }
+        test_rsp_file("test_vectors/SHA3/SHA3_512ShortMsg.rsp", "sha3-512");
     }
 
     #[test]
