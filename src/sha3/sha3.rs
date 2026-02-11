@@ -144,8 +144,7 @@ fn rc(t: usize) -> u8 {
     }
 
     // Step 3.  For i from 1 to t mod 255, let: <...>
-    let t_mod = t % 255;
-    for i in 1..t_mod+1 { // FIXME clarify the boundary condition
+    for _ in 1..(t % 255)+1 {
         R = prepend_zero(&R);
         R[0] = R[0] ^ R[8];
         R[4] = R[4] ^ R[8];
@@ -163,9 +162,9 @@ fn rc(t: usize) -> u8 {
 fn iota(A: &State, ir: usize) -> State {
     let w = A.len();
     
-    // Hardcoded constants for SHA-3
+    // Hardcoded for SHA-3
     assert!(w==64);
-    const el: usize = 6;
+    let el = 6;
 
     let mut A1 = new_state(w);
 
@@ -197,17 +196,17 @@ fn iota(A: &State, ir: usize) -> State {
 
 /// Rnd function (see page 16, Sec. 3.3, of the specs).
 fn rnd(A: &State, ir: usize) -> State {
-    println!("\nRound {ir}\n");
+    // println!("\nRound {ir}\n");
     let A1 = theta(A);
-    debug_state_as_bytes("After Theta", &A1);
+    // debug_state_as_bytes("After Theta", &A1);
     let A2 = rho(&A1);
-    debug_state_as_bytes("After Rho", &A2);
+    // debug_state_as_bytes("After Rho", &A2);
     let A3 = pi(&A2);
-    debug_state_as_bytes("After Pi", &A3);
+    // debug_state_as_bytes("After Pi", &A3);
     let A4 = chi(&A3);
-    debug_state_as_bytes("After Chi", &A4);
+    // debug_state_as_bytes("After Chi", &A4);
     let A5 = iota(&A4, ir);
-    debug_state_as_bytes("After Iota", &A5);
+    // debug_state_as_bytes("After Iota", &A5);
     A5
 }
 
@@ -223,19 +222,18 @@ fn rnd(A: &State, ir: usize) -> State {
 fn keccak_p(b: usize, nr: usize, S: &BitString) -> BitString {    
     // hardcoded values of b, w, el, for SHA3
     assert!(b==1600);
-    // these are derived from b and nr
-    //const w: u32 = 64;
-    const el: usize = 6;
+    //let w = 64;
+    let el = 6;
     assert_eq!(b, S.len());    
 
     // Step 1. Convert S to A
     let mut A = bitstring_to_state(S);
 
-    debug_state_as_bytes("keccak_p / Step 1 / A", &A);
-    debug_state_as_lanes_of_integers("keccak_p / Step 1 / A", &A);
+    // debug_state_as_bytes("keccak_p / Step 1 / A", &A);
+    // debug_state_as_lanes_of_integers("keccak_p / Step 1 / A", &A);
 
     // Step 2.   ir  from (12 + 2 el – nr) to  (12 + 2 el – 1)
-    for ir in ((12 + 2 * el - nr)..(12 + 2 * el)) {
+    for ir in (12 + 2 * el - nr)..(12 + 2 * el) {
         A = rnd(&A, ir);
     }    
     // Step 3. Convert A to S' of length b
@@ -252,8 +250,10 @@ fn keccak_p(b: usize, nr: usize, S: &BitString) -> BitString {
 //
 // c : 
 fn keccak(keccak_c: usize, N: &BitString, d: usize) -> BitString {
-    const b: usize = 1600;
-    const nr: usize = 24;
+    // hardcoded for SHA3
+    let b = 1600;
+    let nr = 24;
+
     assert!(b > keccak_c);
     let r: usize = b - keccak_c;
 
@@ -367,9 +367,9 @@ mod tests {
         test_on_input(&[], "a7ffc6f8bf1ed76651c14756a061d662f580ff4de43b49fa82d80a4b80f8434a");
     }
 
-    // FIXME: need clarification on input conversion from bits to bytes
+    
     // #[test]
-    // fn test_5_bits(){
+    // fn test_5_bits(){ 
     //     test_on_input(&[1, 1, 0, 0, 1], "7B0047CF5A456882363CBF0FB05322CF65F4B7059A46365E830132E3B5D957AF");
     // }
 

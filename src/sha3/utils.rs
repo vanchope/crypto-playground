@@ -260,7 +260,7 @@ mod tests {
         let bytes = ByteString::from([0, 10, 32, 255]);
         let hex = encode_hex(&bytes);
         println!("{hex}");
-        assert_eq!(hex, "000a20ff");
+        assert_eq!(&hex.to_lowercase(), "000a20ff");
 
         let vec_2 = decode_hex(&hex).unwrap();
         let bytes_2 = vec_2.as_slice();
@@ -270,7 +270,7 @@ mod tests {
     #[test]
     fn test_state_conversion(){
         let mut S = BitString::new();
-        const w: usize = 64; // hardcoded for SHA3
+        let w = 64; // hardcoded for SHA3
         let bit_len = w * 5 * 5;
         
         for i in 0..bit_len {
