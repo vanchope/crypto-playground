@@ -356,9 +356,9 @@ mod tests {
 
     use super::*;
 
-    fn test_on_input(bytes0: &[u8], expected_digest: &str){
-        let computed_digest = sha3_256(bytes0).to_lowercase();
-        println!("Digest for bytes {bytes0:?} : {computed_digest}");
+    fn test_on_input(bytes: &[u8], expected_digest: &str){
+        let computed_digest = sha3_256(bytes).to_lowercase();
+        println!("Digest for bytes {bytes:?} : {computed_digest}");
         assert_eq!(&expected_digest.to_lowercase(), &computed_digest);
     }
 
@@ -376,6 +376,49 @@ mod tests {
     #[test]
     fn test_2_bytes(){
         test_on_input(&decode_hex("e9").unwrap(), "f0d04dd1e6cfc29a4460d521796852f25d9ef8d28b44ee91ff5b759d72c1e6d6");
+    }
+
+
+    use std::fs::read_to_string;
+    fn read_lines(filename: &str) -> Vec<String> {
+        read_to_string(filename)
+            .unwrap()  // panic on possible file-reading errors
+            .lines()  // split the string into an iterator of string slices
+            .map(String::from)  // make each slice into a string
+            .collect()  // gather them together into a vector
+    }
+
+    #[test]
+    fn test_rsp_file(){
+        let filename = "test_vectors/SHA3/SHA3_256ShortMsg.rsp";
+        let lines = read_lines(filename);
+        let n = lines.len();                
+        println!("file read {filename} -> {n} lines");
+
+        for i in 0..n-2 {
+            let line = &lines[i];
+            if line.starts_with("Len") {
+                let len_bytes: i32 = line.split("=").skip(1).next().unwrap().trim().parse().unwrap();
+                
+                let line_msg = &lines[i+1];
+                let msg = line_msg.split("=").skip(1).next().unwrap().trim();
+                let msg_len = msg.len();
+                if len_bytes > 0 {  // len 0 test has input msg as 00.
+                    assert_eq!(msg_len * 4, len_bytes as usize);
+                }else{
+                    continue;
+                }
+                
+                let line_md = &lines[i+2];
+                let md = line_md.split("=").skip(1).next().unwrap().trim();
+
+                println!("Found test: Len = {len_bytes}, Msg [of len {msg_len}] = {msg}");
+                println!("expected MD = '{md}'");
+
+                let decoded_input = decode_hex(msg).unwrap();
+                test_on_input(&decoded_input, md);
+            }
+        }
     }
  
 }
