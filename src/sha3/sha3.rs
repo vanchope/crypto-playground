@@ -84,7 +84,7 @@ fn rho(A: &State) -> State {
             assert_eq!(z1, (zi - RHO_OFFSETS[x][y] + 5*wi) % wi);
             A1[z][x][y] = A[z1 as usize][x][y];
         }
-        (x, y) = (y, (2*x + 3*y) % 5); // FIXME clarify if this works correctly
+        (x, y) = (y, (2*x + 3*y) % 5);
     }
 
     // Step 3. Return A1
@@ -272,7 +272,6 @@ fn keccak(keccak_c: usize, N: &BitString, d: usize) -> BitString {
         let slice = &P[r*i..r*(i+1)];
         let mut Pi = BitString::new();
         slice.iter().for_each(|el| Pi.push(*el));
-        //assert_eq!(Pi.len(), r);
         Ps.push(Pi);
     }   
 
@@ -280,7 +279,7 @@ fn keccak(keccak_c: usize, N: &BitString, d: usize) -> BitString {
     let mut S = new_bitstring(b);
 
     //Step 6.  For i from 0 to n-1, let <..>
-    for i in 0..n { // FIXME clarify the boundary conditions
+    for i in 0..n {
         let zero = new_bitstring(c);
         let Pi_zero = concat_bitstrings(&Ps[i], &zero);
         let f_input = xor_bitstrings(&S, &Pi_zero);
@@ -397,7 +396,6 @@ mod tests {
     }
     
     fn test_rsp_file(filename: &str, sha3_variant: &str){
-        //let filename = ;
         let lines = read_lines(filename);
         let n = lines.len();                
         println!("file read {filename} -> {n} lines");
