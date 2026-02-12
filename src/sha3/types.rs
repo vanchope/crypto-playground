@@ -1,3 +1,10 @@
+pub enum Sha3Variant {
+    SHA3_224,
+    SHA3_256,
+    SHA3_384,
+    SHA3_512,
+}
+
 /// each element x is (0 <= x <= 255)
 pub type ByteString = Vec<u8>;
 

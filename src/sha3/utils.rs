@@ -25,7 +25,7 @@ pub fn bytestr_to_bitstring(bytes: &[u8]) -> BitString {
 pub fn bitstring_to_bytestr(bits: &[u8]) -> ByteString {
     assert!(bits.len() % 8 == 0);
     let bytes_len = bits.len() / 8;
-    let mut res = ByteString::new();
+    let mut res = ByteString::with_capacity(bytes_len);
     for i in 0..bytes_len {
         let mut byte: u8 = 0;
         for offset in 0..8 {
@@ -142,7 +142,8 @@ pub fn xor_bitstrings(bs0: &BitString, bs1: &BitString) -> BitString {
 }
 
 // Concats Bitstings bs1 and bs2 to bs1 || bs2.
-pub fn concat_bitstrings(bs0: &BitString, bs1: &BitString) -> BitString {
+//pub fn concat_bitstrings(bs0: &BitString, bs1: &BitString) -> BitString {
+pub fn concat_bitstrings(bs0: &[u8], bs1: &[u8]) -> BitString {
     let len0 = bs0.len();
     let len1 = bs1.len();
     let mut bs2 = BitString::with_capacity(len0 + len1);

@@ -1,13 +1,20 @@
 
+use crate::sha3::constants::KECCAK_B;
+use crate::sha3::constants::KECCAK_NR;
+use crate::sha3::constants::RHO_OFFSETS;
+use crate::sha3::constants::get_el_from_b;
+use crate::sha3::constants::get_w_from_b;
 use crate::sha3::types::State;
 use crate::sha3::types::BitString;
 use crate::sha3::types::new_plane;
 use crate::sha3::types::new_state;
-use crate::sha3::utils;
+use crate::sha3::utils::bitstring_to_bytestr;
 use crate::sha3::utils::bitstring_to_state;
+use crate::sha3::utils::bytestr_to_bitstring;
 use crate::sha3::utils::concat_bitstrings;
 use crate::sha3::utils::debug_state_as_bytes;
 use crate::sha3::utils::debug_state_as_lanes_of_integers;
+use crate::sha3::utils::encode_hex;
 use crate::sha3::utils::new_bitstring;
 use crate::sha3::utils::prepend_zero;
 use crate::sha3::utils::state_to_bitstring;
@@ -64,14 +71,6 @@ fn rho(A: &State) -> State {
     let (mut x, mut y) = (1, 0);
     
     //Step 3.  For t from 0 to 23:
-    // see Table 2 on p.13; Offsets of Rho 
-    const RHO_OFFSETS: [[i32; 5] ;5] = [ // [x][y]
-        [0, 36, 3, 105, 210],
-        [1, 300, 10, 45, 66],
-        [190, 6, 171, 15, 253],
-        [28, 55, 153, 21, 120],
-        [91, 276, 231, 136, 78]
-    ];
     for t in 0..24 {
         for z in 0..w {
             let zi = z as i32;
@@ -137,7 +136,7 @@ fn rc(t: usize) -> u8 {
     }
     
     // Step 2.   R = 1 0 0 0 0 0 0 0   (8 bits with R[0]=1, rest are 0s).
-    let mut R = BitString::new();
+    let mut R = BitString::with_capacity(8);
     R.push(1);
     for _i in 1..8 {
         R.push(0);
@@ -159,12 +158,12 @@ fn rc(t: usize) -> u8 {
 
 
 /// 5th transformation (Alg 6.)
-fn iota(A: &State, ir: usize) -> State {
+fn iota(A: &State, ir: usize, el: usize) -> State {
     let w = A.len();
     
     // Hardcoded for SHA-3
-    assert!(w==64);
-    let el = 6;
+    //assert!(w==64);
+    //let el = 6;
 
     let mut A1 = new_state(w);
 
@@ -195,7 +194,8 @@ fn iota(A: &State, ir: usize) -> State {
 }
 
 /// Rnd function (see page 16, Sec. 3.3, of the specs).
-fn rnd(A: &State, ir: usize) -> State {
+///    we explicitly specify "el" as input here
+fn rnd(A: &State, ir: usize, el: usize) -> State {
     // println!("\nRound {ir}\n");
     let A1 = theta(A);
     // debug_state_as_bytes("After Theta", &A1);
@@ -205,7 +205,7 @@ fn rnd(A: &State, ir: usize) -> State {
     // debug_state_as_bytes("After Pi", &A3);
     let A4 = chi(&A3);
     // debug_state_as_bytes("After Chi", &A4);
-    let A5 = iota(&A4, ir);
+    let A5 = iota(&A4, ir, el);
     // debug_state_as_bytes("After Iota", &A5);
     A5
 }
@@ -220,11 +220,9 @@ fn rnd(A: &State, ir: usize) -> State {
 //
 // s : an input string of length b; represented as an array of bytes
 fn keccak_p(b: usize, nr: usize, S: &BitString) -> BitString {    
-    // hardcoded values of b, w, el, for SHA3
-    assert!(b==1600);
-    //let w = 64;
-    let el = 6;
-    assert_eq!(b, S.len());    
+    //let w = get_w_from_b(b);
+    let el = get_el_from_b(b);
+    assert_eq!(b, S.len());
 
     // Step 1. Convert S to A
     let mut A = bitstring_to_state(S);
@@ -234,7 +232,7 @@ fn keccak_p(b: usize, nr: usize, S: &BitString) -> BitString {
 
     // Step 2.   ir  from (12 + 2 el – nr) to  (12 + 2 el – 1)
     for ir in (12 + 2 * el - nr)..(12 + 2 * el) {
-        A = rnd(&A, ir);
+        A = rnd(&A, ir, el);
     }    
     // Step 3. Convert A to S' of length b
     let s1 = state_to_bitstring(&A);
@@ -251,8 +249,8 @@ fn keccak_p(b: usize, nr: usize, S: &BitString) -> BitString {
 // c : 
 fn keccak(keccak_c: usize, N: &BitString, d: usize) -> BitString {
     // hardcoded for SHA3
-    let b = 1600;
-    let nr = 24;
+    let b = KECCAK_B;
+    let nr = KECCAK_NR;
 
     assert!(b > keccak_c);
     let r: usize = b - keccak_c;
@@ -267,12 +265,14 @@ fn keccak(keccak_c: usize, N: &BitString, d: usize) -> BitString {
     let c = b - r; // === keccak_c
 
     //Step 4. Split P to n substrings of len r
-    let mut Ps: Vec<BitString> = Vec::new();
+    //let mut Ps: Vec<BitString> = Vec::new();
+    let mut Ps: Vec<&[u8]> = Vec::new();
     for i in 0..n {
         let slice = &P[r*i..r*(i+1)];
-        let mut Pi = BitString::new();
-        slice.iter().for_each(|el| Pi.push(*el));
-        Ps.push(Pi);
+        //let mut Pi = BitString::with_capacity(r);
+        //slice.iter().for_each(|el| Pi.push(*el));
+        //Ps.push(Pi);
+        Ps.push(slice);
     }   
 
     //Step 5.
@@ -304,9 +304,13 @@ fn keccak(keccak_c: usize, N: &BitString, d: usize) -> BitString {
 
 }
 
-// Alg. 9
-// output a string of the form 10*1
+/// Alg. 9
+/// output a string of the form 10*1
+///   x: positive
+///   m: non-negative 
 fn pad101(x: i32,  m: i32) -> BitString {
+    assert!(x>0);
+    assert!(m>=0);
     let mut j = (-m -2) % x; 
     if j<0 {
         j += x;
@@ -323,12 +327,12 @@ fn pad101(x: i32,  m: i32) -> BitString {
 
 // two-bit suffixes are applied to M in the sha3 family of functions
 pub fn sha3_family(m: &[u8], keccak_c: usize, keccak_d: usize) -> String {
-    let mut n = utils::bytestr_to_bitstring(m);
+    let mut n = bytestr_to_bitstring(m);
     n.push(0);
     n.push(1);
     let digest_bits = keccak(keccak_c, &n, keccak_d);
-    let digest_bytes = utils::bitstring_to_bytestr(&digest_bits);
-    let digest_hex = utils::encode_hex(&digest_bytes);
+    let digest_bytes = bitstring_to_bytestr(&digest_bits);
+    let digest_hex = encode_hex(&digest_bytes);
     digest_hex
 }
 
@@ -357,15 +361,14 @@ mod tests {
     use super::*;
 
     fn test_sha3_on_input(bytes: &[u8], expected_digest: &str, sha3_variant: &str){
-        //let sha_variant = 256;
         let computed_digest = match sha3_variant {
             "sha3-224" => sha3_224(bytes),
             "sha3-256" => sha3_256(bytes),
             "sha3-384" => sha3_384(bytes),
             "sha3-512" => sha3_512(bytes),
             _ => panic!()
-        };
-        println!("Digest for bytes {bytes:?} : {computed_digest}");
+        };        
+        //println!("Digest for bytes {bytes:?} : {computed_digest}");
         assert_eq!(&expected_digest.to_lowercase(), &computed_digest.to_lowercase());
     }    
 
@@ -400,9 +403,11 @@ mod tests {
         let n = lines.len();                
         println!("file read {filename} -> {n} lines");
 
+        let mut number_of_tests = 0;
         for i in 0..n-2 {
             let line = &lines[i];
             if line.starts_with("Len") {
+                number_of_tests += 1;
                 let len_bytes: i32 = line.split("=").skip(1).next().unwrap().trim().parse().unwrap();
                 
                 let line_msg = &lines[i+1];
@@ -415,7 +420,11 @@ mod tests {
                 let line_md = &lines[i+2];
                 let md = line_md.split("=").skip(1).next().unwrap().trim();
 
-                println!("Found test: Len = {len_bytes}, Msg [of len {msg_len}] = {msg_hex}");
+                let msg_hex_to_show = match msg_hex.len() {
+                    ..17 => msg_hex.to_string(),
+                    17.. => msg_hex[..4].to_string() + "..." + &msg_hex[msg_hex.len()-4..]
+                };
+                println!("Found test #{number_of_tests}: Len = {len_bytes}, Msg [of len {msg_len}] = {msg_hex_to_show}");
                 println!("expected MD = '{md}'");
 
                 let decoded_input = decode_hex(msg_hex).unwrap();
@@ -437,6 +446,10 @@ mod tests {
         test_rsp_file("test_vectors/SHA3/SHA3_256ShortMsg.rsp", "sha3-256");
     }
 
+    #[test]
+    fn test_rsp_256_long_file(){
+        test_rsp_file("test_vectors/SHA3/SHA3_256LongMsg.rsp", "sha3-256");
+    }
 
     #[test]
     fn test_rsp_384_file(){
