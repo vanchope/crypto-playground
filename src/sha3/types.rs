@@ -30,11 +30,11 @@ pub fn new_slice() -> StateSlice {
 }
 
 pub fn new_state(w: usize) -> State {
-    let mut A = State::with_capacity(w);
+    let mut a = State::with_capacity(w);
     for _z in 0..w {
-        A.push(new_slice());
+        a.push(new_slice());
     }
-    A
+    a
 }
 
 pub fn new_plane(w: usize) -> StatePlane {

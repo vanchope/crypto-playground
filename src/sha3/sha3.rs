@@ -22,49 +22,49 @@ use crate::sha3::utils::trunc;
 use crate::sha3::utils::xor_bitstrings;
 
 /// 1st transformation function (Alg 1., p.11)
-fn theta(A: &State) -> State {
-    let w = A.len();
+fn theta(a: &State) -> State {
+    let w = a.len();
 
     //Step 1.
-    let mut C = new_plane(w);
+    let mut c = new_plane(w);
     for x in 0..5 {
         for z in 0..w {
-            C[z][x] = A[z][x][0] ^ A[z][x][1] ^ A[z][x][2] ^ A[z][x][3] ^ A[z][x][4];
+            c[z][x] = a[z][x][0] ^ a[z][x][1] ^ a[z][x][2] ^ a[z][x][3] ^ a[z][x][4];
         }
     }
 
     // Step 2.
-    let mut D = new_plane(w);
+    let mut d = new_plane(w);
     for x in 0..5 {
         for z in 0..w {
             let xi = x as i32;
             let wi = w as i32;
             let zi = z as i32;
-            D[z][x] = C[z][((xi-1+5) % 5) as usize] ^ C[((zi-1+wi) % wi)as usize][(x+1) % 5];
+            d[z][x] = c[z][((xi-1+5) % 5) as usize] ^ c[((zi-1+wi) % wi)as usize][(x+1) % 5];
         }
     }
 
     // Step 3.
-    let mut A1 = new_state(w);
+    let mut a1 = new_state(w);
     for x in 0..5 {
         for y in 0..5 {
             for z in 0..w {
-                A1[z][x][y] = A[z][x][y] ^ D[z][x];
+                a1[z][x][y] = a[z][x][y] ^ d[z][x];
             }
         }
     }        
-    A1
+    a1
 }
 
 
 /// 2nd transformation function (Alg 2., p.12)
-fn rho(A: &State) -> State {
-    let w = A.len();
-    let mut A1 = new_state(w);
+fn rho(a: &State) -> State {
+    let w = a.len();
+    let mut a1 = new_state(w);
     
     //Step 1.
     for z in 0..w {
-        A1[z][0][0] = A[z][0][0];
+        a1[z][0][0] = a[z][0][0];
     }
 
     //Step 2.
@@ -81,45 +81,45 @@ fn rho(A: &State) -> State {
             }
             assert!(z1>=0);
             assert_eq!(z1, (zi - RHO_OFFSETS[x][y] + 5*wi) % wi);
-            A1[z][x][y] = A[z1 as usize][x][y];
+            a1[z][x][y] = a[z1 as usize][x][y];
         }
         (x, y) = (y, (2*x + 3*y) % 5);
     }
 
     // Step 3. Return A1
-    A1
+    a1
 }
 
 
 /// 3rd transformation (Alg 3.)
-fn pi(A: &State) -> State {
-    let w = A.len();
-    let mut A1 = new_state(w);
+fn pi(a: &State) -> State {
+    let w = a.len();
+    let mut a1 = new_state(w);
     for x in 0..5 {
         for y in 0..5 {
             for z in 0..w {
-                A1[z][x][y] = A[z][(x + 3*y) % 5][x];
+                a1[z][x][y] = a[z][(x + 3*y) % 5][x];
             }
         }
     }
-    A1
+    a1
 }
 
 /// 4th transformation function (Alg 4.)
-fn chi(A: &State) -> State {
-    let w = A.len();
-    let mut A1 = new_state(w);
+fn chi(a: &State) -> State {
+    let w = a.len();
+    let mut a1 = new_state(w);
     for x in 0..5 {
         for y in 0..5 {
             for z in 0..w {
-                let tmp1 = A[z][(x+1) % 5][y] ^ 1;
-                let tmp2 = A[z][(x+2) % 5][y];
+                let tmp1 = a[z][(x+1) % 5][y] ^ 1;
+                let tmp2 = a[z][(x+2) % 5][y];
                 let tmp = tmp1 * tmp2;
-                A1[z][x][y] = A[z][x][y] ^ tmp;
+                a1[z][x][y] = a[z][x][y] ^ tmp;
             }
         }
     }
-    A1
+    a1
 }
 
 
@@ -128,7 +128,7 @@ fn chi(A: &State) -> State {
 /// input t: integer.
 /// 
 ///    This function is used in Alg. 6 with non-negative values of t.
-fn rc(t: usize) -> u8 {
+fn rc_fun(t: usize) -> u8 {
     
     // Step 1.
     if t % 255 == 0 {
@@ -136,78 +136,74 @@ fn rc(t: usize) -> u8 {
     }
     
     // Step 2.   R = 1 0 0 0 0 0 0 0   (8 bits with R[0]=1, rest are 0s).
-    let mut R = BitString::with_capacity(8);
-    R.push(1);
+    let mut r = BitString::with_capacity(8);
+    r.push(1);
     for _i in 1..8 {
-        R.push(0);
+        r.push(0);
     }
 
     // Step 3.  For i from 1 to t mod 255, let: <...>
     for _ in 1..(t % 255)+1 {
-        R = prepend_zero(&R);
-        R[0] = R[0] ^ R[8];
-        R[4] = R[4] ^ R[8];
-        R[5] = R[5] ^ R[8];
-        R[6] = R[6] ^ R[8];
-        R = trunc(8, &R);
+        r = prepend_zero(&r);
+        r[0] = r[0] ^ r[8];
+        r[4] = r[4] ^ r[8];
+        r[5] = r[5] ^ r[8];
+        r[6] = r[6] ^ r[8];
+        r = trunc(8, &r);
     }
 
     // Step 4. Return R[0]
-    R[0]
+    r[0]
 }
 
 
 /// 5th transformation (Alg 6.)
-fn iota(A: &State, ir: usize, el: usize) -> State {
-    let w = A.len();
+fn iota(a: &State, ir: usize, el: usize) -> State {
+    let w = a.len();
     
-    // Hardcoded for SHA-3
-    //assert!(w==64);
-    //let el = 6;
-
-    let mut A1 = new_state(w);
+    let mut a1 = new_state(w);
 
     //Step 1.
     for x in 0..5 {
         for y in 0..5 {
             for z in 0..w {
-                A1[z][x][y] = A[z][x][y];
+                a1[z][x][y] = a[z][x][y];
             }
         }
     }
 
     //Step 2.
-    let mut RC = new_bitstring(w);
+    let mut rc = new_bitstring(w);
 
     // Step 3. For j from 0 to l, let RC[2**j – 1] = rc(j + 7ir)
     for j in 0..(el+1) { // FIXME clarify boundary conditions
-        RC[(1<<j)-1] = rc(j + 7 * ir);
+        rc[(1<<j)-1] = rc_fun(j + 7 * ir);
     }
 
     // Step 4.
     for z in 0..w {
-        A1[z][0][0] = A1[z][0][0] ^ RC[z];
+        a1[z][0][0] = a1[z][0][0] ^ rc[z];
     }
 
     // Step 5. Return A'
-    A1
+    a1
 }
 
 /// Rnd function (see page 16, Sec. 3.3, of the specs).
 ///    we explicitly specify "el" as input here
-fn rnd(A: &State, ir: usize, el: usize) -> State {
+fn rnd(a: &State, ir: usize, el: usize) -> State {
     // println!("\nRound {ir}\n");
-    let A1 = theta(A);
+    let a1 = theta(a);
     // debug_state_as_bytes("After Theta", &A1);
-    let A2 = rho(&A1);
+    let a2 = rho(&a1);
     // debug_state_as_bytes("After Rho", &A2);
-    let A3 = pi(&A2);
+    let a3 = pi(&a2);
     // debug_state_as_bytes("After Pi", &A3);
-    let A4 = chi(&A3);
+    let a4 = chi(&a3);
     // debug_state_as_bytes("After Chi", &A4);
-    let A5 = iota(&A4, ir, el);
+    let a5 = iota(&a4, ir, el);
     // debug_state_as_bytes("After Iota", &A5);
-    A5
+    a5
 }
 
 // Alg 7.
@@ -219,23 +215,23 @@ fn rnd(A: &State, ir: usize, el: usize) -> State {
 // nr : number of rounds
 //
 // s : an input string of length b; represented as an array of bytes
-fn keccak_p(b: usize, nr: usize, S: &BitString) -> BitString {    
+fn keccak_p(b: usize, nr: usize, s: &BitString) -> BitString {    
     //let w = get_w_from_b(b);
     let el = get_el_from_b(b);
-    assert_eq!(b, S.len());
+    assert_eq!(b, s.len());
 
     // Step 1. Convert S to A
-    let mut A = bitstring_to_state(S);
+    let mut a = bitstring_to_state(s);
 
     // debug_state_as_bytes("keccak_p / Step 1 / A", &A);
     // debug_state_as_lanes_of_integers("keccak_p / Step 1 / A", &A);
 
     // Step 2.   ir  from (12 + 2 el – nr) to  (12 + 2 el – 1)
     for ir in (12 + 2 * el - nr)..(12 + 2 * el) {
-        A = rnd(&A, ir, el);
+        a = rnd(&a, ir, el);
     }    
     // Step 3. Convert A to S' of length b
-    let s1 = state_to_bitstring(&A);
+    let s1 = state_to_bitstring(&a);
     assert_eq!(s1.len(), b as usize);
     s1
 }
@@ -247,7 +243,7 @@ fn keccak_p(b: usize, nr: usize, S: &BitString) -> BitString {
 //            SPONGE[f, pad, r](N, d)
 //
 // c : 
-fn keccak(keccak_c: usize, N: &BitString, d: usize) -> BitString {
+fn keccak(keccak_c: usize, n_bitstr: &BitString, d: usize) -> BitString {
     // hardcoded for SHA3
     let b = KECCAK_B;
     let nr = KECCAK_NR;
@@ -256,50 +252,50 @@ fn keccak(keccak_c: usize, N: &BitString, d: usize) -> BitString {
     let r: usize = b - keccak_c;
 
     //Step 1 of SPONGE
-    let pad = pad101(r as i32, N.len() as i32);
-    let mut P = BitString::from(N.as_slice());
-    pad.iter().for_each(|el| P.push(*el)); // P = N || pad
+    let pad = pad101(r as i32, n_bitstr.len() as i32); // FIXME
+    let mut p = BitString::from(n_bitstr.as_slice());
+    pad.iter().for_each(|el| p.push(*el)); // P = N || pad
     
     //Steps 2-3
-    let n = P.len() / r;
+    let n = p.len() / r;
     let c = b - r; // === keccak_c
 
     //Step 4. Split P to n substrings of len r
     //let mut Ps: Vec<BitString> = Vec::new();
-    let mut Ps: Vec<&[u8]> = Vec::new();
+    let mut ps: Vec<&[u8]> = Vec::new();
     for i in 0..n {
-        let slice = &P[r*i..r*(i+1)];
+        let slice = &p[r*i..r*(i+1)];
         //let mut Pi = BitString::with_capacity(r);
         //slice.iter().for_each(|el| Pi.push(*el));
         //Ps.push(Pi);
-        Ps.push(slice);
+        ps.push(slice);
     }   
 
     //Step 5.
-    let mut S = new_bitstring(b);
+    let mut s = new_bitstring(b);
 
     //Step 6.  For i from 0 to n-1, let <..>
     for i in 0..n {
         let zero = new_bitstring(c);
-        let Pi_zero = concat_bitstrings(&Ps[i], &zero);
-        let f_input = xor_bitstrings(&S, &Pi_zero);
-        S = keccak_p(b, nr, &f_input);
+        let pi_zero = concat_bitstrings(&ps[i], &zero);
+        let f_input = xor_bitstrings(&s, &pi_zero);
+        s = keccak_p(b, nr, &f_input);
     }
     
     //Step 7.
-    let mut Z = BitString::new(); // can we estimate the max capacity?
+    let mut z = BitString::new(); // can we estimate the max capacity?
     
     loop {
         //Step 8.
-        Z = concat_bitstrings(&Z, &trunc(r, &S));
+        z = concat_bitstrings(&z, &trunc(r, &s));
 
         //Step 9.
-        if d <= Z.len() {
-            return trunc(d, &Z)
+        if d <= z.len() {
+            return trunc(d, &z)
         }
 
         //Step 10. update S and go to Step 8
-        S = keccak_p(b, nr, &S);
+        s = keccak_p(b, nr, &s);
     }
 
 }
