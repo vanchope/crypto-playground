@@ -360,14 +360,22 @@ mod tests {
 
     use super::*;
 
+    fn get_timestamp() -> Duration {
+        SystemTime::now().duration_since(UNIX_EPOCH).unwrap()
+    }
+    
     fn test_sha3_on_input(bytes: &[u8], expected_digest: &str, sha3_variant: &str){
+        let timestamp_start = get_timestamp();
         let computed_digest = match sha3_variant {
             "sha3-224" => sha3_224(bytes),
             "sha3-256" => sha3_256(bytes),
             "sha3-384" => sha3_384(bytes),
             "sha3-512" => sha3_512(bytes),
             _ => panic!()
-        };        
+        };
+        let duration = get_timestamp() - timestamp_start;
+        println!("Execution time of sha3 function: {duration:?}");
+        
         //println!("Digest for bytes {bytes:?} : {computed_digest}");
         assert_eq!(&expected_digest.to_lowercase(), &computed_digest.to_lowercase());
     }    
@@ -389,7 +397,7 @@ mod tests {
     }
 
 
-    use std::fs::read_to_string;
+    use std::{fs::read_to_string, time::{Duration, SystemTime, UNIX_EPOCH}};
     fn read_lines(filename: &str) -> Vec<String> {
         read_to_string(filename)
             .unwrap()  // panic on possible file-reading errors
