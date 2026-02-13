@@ -14,7 +14,6 @@ use crate::sha3::utils::bytestr_to_bitstring;
 use crate::sha3::utils::concat_bitstrings;
 use crate::sha3::utils::debug_state_as_bytes;
 use crate::sha3::utils::debug_state_as_lanes_of_integers;
-use crate::sha3::utils::encode_hex;
 use crate::sha3::utils::new_bitstring;
 use crate::sha3::utils::prepend_zero;
 use crate::sha3::utils::state_to_bitstring;
@@ -328,7 +327,7 @@ pub fn sha3_family(m: &[u8], keccak_c: usize, keccak_d: usize) -> String {
     n.push(1);
     let digest_bits = keccak(keccak_c, &n, keccak_d);
     let digest_bytes = bitstring_to_bytestr(&digest_bits);
-    let digest_hex = encode_hex(&digest_bytes);
+    let digest_hex = hex::encode(&digest_bytes.as_slice());
     digest_hex
 }
 
@@ -352,7 +351,7 @@ pub fn sha3_512(m: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use crate::sha3::{types::Sha3Variant, utils::decode_hex};
+    use crate::sha3::{types::Sha3Variant};
 
     use super::*;
 
@@ -388,7 +387,7 @@ mod tests {
 
     #[test]
     fn test_2_bytes(){
-        test_sha3_on_input(&decode_hex("e9").unwrap(), "f0d04dd1e6cfc29a4460d521796852f25d9ef8d28b44ee91ff5b759d72c1e6d6", &Sha3Variant::SHA3_256);
+        test_sha3_on_input(&hex::decode("e9").unwrap(), "f0d04dd1e6cfc29a4460d521796852f25d9ef8d28b44ee91ff5b759d72c1e6d6", &Sha3Variant::SHA3_256);
     }
 
 
@@ -430,7 +429,7 @@ mod tests {
                 println!("Found test #{number_of_tests}: Len = {len_bytes}, Msg [of len {msg_len}] = {msg_hex_to_show}");
                 println!("expected MD = '{md}'");
 
-                let decoded_input = decode_hex(msg_hex).unwrap();
+                let decoded_input = hex::decode(msg_hex).unwrap();
                 // this takes care of len 0 test case that has input msg as 00 (msg len and Len mismatch).
                 let decoded_input_corrected = &decoded_input[0..(len_bytes/8) as usize];
                 test_sha3_on_input(&decoded_input_corrected, md, sha3_variant);

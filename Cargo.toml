@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 derive_more = { version = "2", features = ["full"] }
+hex = "0.4"
 
 
 [profile.test]

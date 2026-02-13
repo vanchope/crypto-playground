@@ -38,22 +38,6 @@ pub fn bitstring_to_bytestr(bits: &[u8]) -> ByteString {
     res
 }
 
-/// Encodes bytes into 2 characters 0-9A-F.
-pub fn encode_hex(bytes: &ByteString) -> String {
-    bytes.iter().map(|c| format!("{:02X}", c)).collect()
-}
-
-
-// source: https://stackoverflow.com/questions/52987181/how-can-i-convert-a-hex-string-to-a-u8-slice
-use std::num::ParseIntError;
-pub fn decode_hex(s: &str) -> Result<Vec<u8>, ParseIntError> {
-    (0..s.len())
-        .step_by(2)
-        .map(|i| u8::from_str_radix(&s[i..i + 2], 16))
-        .collect()
-}
-
-
 // State conversion functions
 pub fn bitstring_to_state(bits: &BitString) -> State {
     let b = bits.len();
@@ -174,7 +158,7 @@ pub fn debug_state_as_bytes(title: &str, a: &State) {
     let len_bytes = w * 5 * 5 / 8;
     let bit_str = state_to_bitstring(a);
     let byte_str = bitstring_to_bytestr(&bit_str);
-    let hex = encode_hex(&byte_str);
+    let hex =  hex::encode(&byte_str.as_slice());
     //println!("{title} : \n{hex}");
     println!("{title} :");
 
@@ -259,17 +243,6 @@ mod tests {
     fn test_str_to_bitstring() {
         test_with_string("Hello");
         test_with_string("");
-    }
-
-    #[test]
-    fn test_bytestr_to_hex(){
-        let bytestr = ByteString::from(vec![0, 10, 32, 255]);
-        let hex = encode_hex(&bytestr);
-        println!("{hex}");
-        assert_eq!(&hex.to_lowercase(), "000a20ff");
-
-        let vec_2 = decode_hex(&hex).unwrap();
-        assert_eq!(vec_2.as_slice(), bytestr.as_slice());
     }
 
     #[test]
