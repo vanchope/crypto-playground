@@ -4,6 +4,8 @@ use crate::sha3::constants::KECCAK_NR;
 use crate::sha3::constants::RHO_OFFSETS;
 use crate::sha3::constants::get_el_from_b;
 use crate::sha3::constants::get_w_from_b;
+use crate::sha3::types::ByteString;
+use crate::sha3::types::Sha3Variant;
 use crate::sha3::types::State;
 use crate::sha3::types::BitString;
 use crate::sha3::types::new_plane;
@@ -19,6 +21,37 @@ use crate::sha3::utils::prepend_zero;
 use crate::sha3::utils::state_to_bitstring;
 use crate::sha3::utils::trunc;
 use crate::sha3::utils::xor_bitstrings;
+
+
+pub struct Sha3 {
+    sha3_variant: Sha3Variant,
+    is_finalized: bool,
+}
+
+
+impl Sha3 {
+    pub fn new(sha3_variant: Sha3Variant) -> Self {
+        Sha3 {
+            sha3_variant,
+            is_finalized: false,
+        }
+    }
+
+    pub fn update(&mut self, bytestr: &ByteString) {
+        assert!(!self.is_finalized);
+        todo!()
+    }
+
+    pub fn finalize(&mut self) {
+        assert!(!self.is_finalized);
+        self.is_finalized = true;
+        todo!()
+    }
+
+    pub fn digest(self) -> ByteString {
+        todo!()
+    }
+}
 
 /// 1st transformation function (Alg 1., p.11)
 fn theta(a: &State) -> State {
@@ -36,10 +69,9 @@ fn theta(a: &State) -> State {
     let mut d = new_plane(w);
     for x in 0..5 {
         for z in 0..w {
-            let xi = x as i32;
-            let wi = w as i32;
-            let zi = z as i32;
-            d[z][x] = c[z][((xi-1+5) % 5) as usize] ^ c[((zi-1+wi) % wi)as usize][(x+1) % 5];
+            let wi: i32 = w.try_into().unwrap();
+            let zi: i32 = z.try_into().unwrap();
+            d[z][x] = c[z][(x+4) % 5] ^ c[((zi-1+wi) % wi)as usize][(x+1) % 5];
         }
     }
 
@@ -251,7 +283,7 @@ fn keccak(keccak_c: usize, n_bitstr: &BitString, d: usize) -> BitString {
     let r: usize = b - keccak_c;
 
     //Step 1 of SPONGE
-    let pad = pad101(r as i32, n_bitstr.len() as i32); // FIXME
+    let pad = pad101(r, n_bitstr.len());
     let mut p = n_bitstr.clone();
     pad.iter().for_each(|el| p.push(*el)); // P = N || pad
     
@@ -299,18 +331,24 @@ fn keccak(keccak_c: usize, n_bitstr: &BitString, d: usize) -> BitString {
 
 }
 
+
+
+fn keccak_init(){
+    todo!()
+}
+
 /// Alg. 9
 /// output a string of the form 10*1
 ///   x: positive
-///   m: non-negative 
-fn pad101(x: i32,  m: i32) -> BitString {
-    assert!(x>0);
-    assert!(m>=0);
-    let mut j = (-m -2) % x; 
-    if j<0 {
-        j += x;
-    }
-    assert!(j>=0);
+///   m: non-negative
+/// 
+///   it is defined as 1 || 0^j || 1,
+///   where j = -m -2 mod x
+/// 
+fn pad101(x: usize,  m: usize) -> BitString {
+    assert!(x>=2); // we explicitly exclude the case x=1
+    let m1 = m % x;  // m1 \in [0, x-1]
+    let j = (2*x-m1-2) % x;  // it always holds j>=0 assuming x>=2
     let mut res = BitString::new();
     res.push(1);
     for _ in 0..j {
@@ -321,30 +359,29 @@ fn pad101(x: i32,  m: i32) -> BitString {
 }
 
 // two-bit suffixes are applied to M in the sha3 family of functions
-pub fn sha3_family(m: &[u8], keccak_c: usize, keccak_d: usize) -> String {
+pub fn sha3_family(m: &[u8], keccak_c: usize, keccak_d: usize) -> ByteString {
     let mut n = bytestr_to_bitstring(m);
     n.push(0);
     n.push(1);
     let digest_bits = keccak(keccak_c, &n, keccak_d);
     let digest_bytes = bitstring_to_bytestr(&digest_bits);
-    let digest_hex = hex::encode(&digest_bytes.as_slice());
-    digest_hex
+    digest_bytes
 }
 
-pub fn sha3_224(m:  &[u8]) -> String {
+pub fn sha3_224(m:  &[u8]) -> ByteString {
     sha3_family(m, 448, 224)
 }
 
 /// The function is defined as follows: SHA3-256(M) = KECCAK [512] (M || 01, 256)
-pub fn sha3_256(m: &[u8]) -> String {
+pub fn sha3_256(m: &[u8]) -> ByteString {
     sha3_family(m, 512, 256)
 }
 
-pub fn sha3_384(m: &[u8]) -> String {
+pub fn sha3_384(m: &[u8]) -> ByteString {
     sha3_family(m,  768, 384)
 }
 
-pub fn sha3_512(m: &[u8]) -> String {
+pub fn sha3_512(m: &[u8]) -> ByteString {
     sha3_family(m,  1024, 512)
 }
 
@@ -367,11 +404,12 @@ mod tests {
             Sha3Variant::SHA3_384 => sha3_384(bytes),
             Sha3Variant::SHA3_512 => sha3_512(bytes),
         };
+        let computed_digest_hex = hex::encode(&computed_digest.as_slice());
         let duration = get_timestamp() - timestamp_start;
         println!("Execution time of sha3 function: {duration:?}");
         
         //println!("Digest for bytes {bytes:?} : {computed_digest}");
-        assert_eq!(&expected_digest.to_lowercase(), &computed_digest.to_lowercase());
+        assert_eq!(&expected_digest.to_lowercase(), &computed_digest_hex.to_lowercase());
     }    
 
     #[test]
@@ -469,7 +507,7 @@ mod tests {
         let filename = "test/test_file.txt";
         let data = fs::read(filename).unwrap();
         let data_bytes = data.len();
-        let computed_digest = sha3_256(&data).to_lowercase();
+        let computed_digest = hex::encode(sha3_256(&data).as_slice()).to_lowercase();
         println!("reading file '{filename}' => len {data_bytes} bytes; bytes => {data:?} \n: digest = {computed_digest}");
     }
  

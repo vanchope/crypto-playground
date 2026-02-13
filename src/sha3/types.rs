@@ -1,4 +1,4 @@
-use derive_more::{Deref, DerefMut, From, Index, IndexMut};
+use derive_more::{Deref, DerefMut, From};
 
 pub enum Sha3Variant {
     SHA3_224,
