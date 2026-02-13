@@ -54,7 +54,7 @@ impl Sha3 {
 }
 
 /// 1st transformation function (Alg 1., p.11)
-fn theta(a: &State) -> State {
+fn theta(a: &mut State) {
     let w = a.len();
 
     //Step 1.
@@ -69,88 +69,85 @@ fn theta(a: &State) -> State {
     let mut d = new_plane(w);
     for x in 0..5 {
         for z in 0..w {
-            let wi: i32 = w.try_into().unwrap();
-            let zi: i32 = z.try_into().unwrap();
-            d[z][x] = c[z][(x+4) % 5] ^ c[((zi-1+wi) % wi)as usize][(x+1) % 5];
+            d[z][x] = c[z][(x+4) % 5] ^ c[(z-1+w) % w][(x+1) % 5];
         }
     }
 
     // Step 3.
-    let mut a1 = new_state(w);
     for x in 0..5 {
         for y in 0..5 {
             for z in 0..w {
-                a1[z][x][y] = a[z][x][y] ^ d[z][x];
+                a[z][x][y] ^= d[z][x];
             }
         }
     }        
-    a1
 }
 
 
 /// 2nd transformation function (Alg 2., p.12)
 fn rho(a: &State) -> State {
     let w = a.len();
-    let mut a1 = new_state(w);
+    let mut cache = new_state(w);
     
     //Step 1.
     for z in 0..w {
-        a1[z][0][0] = a[z][0][0];
+        cache[z][0][0] = a[z][0][0];
     }
 
     //Step 2.
     let (mut x, mut y) = (1, 0);
     
     //Step 3.  For t from 0 to 23:
-    for t in 0..24 {
-        for z in 0..w {
-            let zi = z as i32;
-            let wi = w as i32;
-            let mut z1 = (zi - (t+1)*(t+2)/2) % wi;
-            if z1 < 0 {
-                z1 += wi;
-            }
-            assert!(z1>=0);
-            assert_eq!(z1, (zi - RHO_OFFSETS[x][y] + 5*wi) % wi);
-            a1[z][x][y] = a[z1 as usize][x][y];
+    for _t in 0..24 {
+        for z in 0..w {            
+            // z1 = z - (t+1)*(t+2)/2 mod w            
+            // for sha3 with w=1600, this is equivalent to the line below
+            let z1 = (z - RHO_OFFSETS[x][y] + w) % w;
+            cache[z][x][y] = a[z1][x][y];
         }
         (x, y) = (y, (2*x + 3*y) % 5);
     }
 
     // Step 3. Return A1
-    a1
+    cache
 }
 
 
 /// 3rd transformation (Alg 3.)
-fn pi(a: &State) -> State {
+fn pi(a: &mut State) {
     let w = a.len();
-    let mut a1 = new_state(w);
-    for x in 0..5 {
-        for y in 0..5 {
-            for z in 0..w {
-                a1[z][x][y] = a[z][(x + 3*y) % 5][x];
+    let mut cache = [[0u8; 5]; 5];
+    for z in 0..w {
+        for x in 0..5 {
+            for y in 0..5 {
+                cache[x][y] = a[z][x][y];
+            }
+        }
+        for x in 0..5 {
+            for y in 0..5 {
+                a[z][x][y] = cache[(x + 3*y) % 5][x];
             }
         }
     }
-    a1
 }
 
 /// 4th transformation function (Alg 4.)
-fn chi(a: &State) -> State {
+fn chi(a: &mut State) {
     let w = a.len();
-    let mut a1 = new_state(w);
-    for x in 0..5 {
+    let mut cache = [0u8; 5];
+    for z in 0..w {
         for y in 0..5 {
-            for z in 0..w {
-                let tmp1 = a[z][(x+1) % 5][y] ^ 1;
-                let tmp2 = a[z][(x+2) % 5][y];
+            for x in 0..5 {
+                cache[x] = a[z][x][y];
+            }
+            for x in 0..5 {
+                let tmp1 = cache[(x+1) % 5] ^ 1;
+                let tmp2 = cache[(x+2) % 5];
                 let tmp = tmp1 * tmp2;
-                a1[z][x][y] = a[z][x][y] ^ tmp;
+                a[z][x][y] ^= tmp;
             }
         }
     }
-    a1
 }
 
 
@@ -189,52 +186,37 @@ fn rc_fun(t: usize) -> u8 {
 
 
 /// 5th transformation (Alg 6.)
-fn iota(a: &State, ir: usize, el: usize) -> State {
+fn iota(a: &mut State, ir: usize, el: usize) {
     let w = a.len();
     
-    let mut a1 = new_state(w);
-
-    //Step 1.
-    for x in 0..5 {
-        for y in 0..5 {
-            for z in 0..w {
-                a1[z][x][y] = a[z][x][y];
-            }
-        }
-    }
+    //Step 1. skip as we modify "a" in place
 
     //Step 2.
     let mut rc = new_bitstring(w);
 
     // Step 3. For j from 0 to l, let RC[2**j – 1] = rc(j + 7ir)
-    for j in 0..(el+1) { // FIXME clarify boundary conditions
+    for j in 0..(el+1) {
         rc[(1<<j)-1] = rc_fun(j + 7 * ir);
     }
 
     // Step 4.
     for z in 0..w {
-        a1[z][0][0] = a1[z][0][0] ^ rc[z];
+        a[z][0][0] ^= rc[z];
     }
-
-    // Step 5. Return A'
-    a1
+    
 }
 
 /// Rnd function (see page 16, Sec. 3.3, of the specs).
 ///    we explicitly specify "el" as input here
-fn rnd(a: &State, ir: usize, el: usize) -> State {
+fn rnd(a: &mut State, ir: usize, el: usize) -> State {
     // println!("\nRound {ir}\n");
-    let a1 = theta(a);
-    // debug_state_as_bytes("After Theta", &A1);
-    let a2 = rho(&a1);
-    // debug_state_as_bytes("After Rho", &A2);
-    let a3 = pi(&a2);
-    // debug_state_as_bytes("After Pi", &A3);
-    let a4 = chi(&a3);
-    // debug_state_as_bytes("After Chi", &A4);
-    let a5 = iota(&a4, ir, el);
+    theta(a);
+    let mut a2 = rho(&a);
+    pi(&mut a2);
+    chi(&mut a2);
+    iota(&mut a2, ir, el);
     // debug_state_as_bytes("After Iota", &A5);
-    a5
+    a2
 }
 
 // Alg 7.
@@ -259,11 +241,11 @@ fn keccak_p(b: usize, nr: usize, s: &BitString) -> BitString {
 
     // Step 2.   ir  from (12 + 2 el – nr) to  (12 + 2 el – 1)
     for ir in (12 + 2 * el - nr)..(12 + 2 * el) {
-        a = rnd(&a, ir, el);
+        a = rnd(&mut a, ir, el);
     }    
     // Step 3. Convert A to S' of length b
     let s1 = state_to_bitstring(&a);
-    assert_eq!(s1.len(), b as usize);
+    assert_eq!(s1.len(), b);
     s1
 }
 
@@ -448,13 +430,13 @@ mod tests {
             let line = &lines[i];
             if line.starts_with("Len") {
                 number_of_tests += 1;
-                let len_bytes: i32 = line.split("=").skip(1).next().unwrap().trim().parse().unwrap();
+                let len_bytes: usize = line.split("=").skip(1).next().unwrap().trim().parse().unwrap();
                 
                 let line_msg = &lines[i+1];
                 let msg_hex = line_msg.split("=").skip(1).next().unwrap().trim();
                 let msg_len = msg_hex.len();
                 if len_bytes > 0 {  // len 0 test has input msg as 00.
-                    assert_eq!(msg_len * 4, len_bytes as usize);
+                    assert_eq!(msg_len * 4, len_bytes);
                 }
                 
                 let line_md = &lines[i+2];
@@ -469,7 +451,7 @@ mod tests {
 
                 let decoded_input = hex::decode(msg_hex).unwrap();
                 // this takes care of len 0 test case that has input msg as 00 (msg len and Len mismatch).
-                let decoded_input_corrected = &decoded_input[0..(len_bytes/8) as usize];
+                let decoded_input_corrected = &decoded_input[0..(len_bytes/8)];
                 test_sha3_on_input(&decoded_input_corrected, md, sha3_variant);
             }
         }

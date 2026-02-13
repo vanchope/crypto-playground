@@ -1,4 +1,4 @@
 pub mod constants;
 pub mod types;
-pub mod utils;
+mod utils;
 pub mod sha3;

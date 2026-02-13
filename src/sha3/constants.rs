@@ -1,7 +1,7 @@
 
 
 // see Table 2 on p.13; Offsets of Rho algorithm
-pub const RHO_OFFSETS: [[i32; 5] ;5] = [ // [x][y]
+pub const RHO_OFFSETS: [[usize; 5] ;5] = [ // [x][y]
     [0, 36, 3, 105, 210],
     [1, 300, 10, 45, 66],
     [190, 6, 171, 15, 253],
