@@ -253,7 +253,7 @@ fn keccak(keccak_c: usize, n_bitstr: &BitString, d: usize) -> BitString {
 
     //Step 1 of SPONGE
     let pad = pad101(r as i32, n_bitstr.len() as i32); // FIXME
-    let mut p = BitString::from(n_bitstr.as_slice());
+    let mut p = n_bitstr.clone();
     pad.iter().for_each(|el| p.push(*el)); // P = N || pad
     
     //Steps 2-3
@@ -352,7 +352,7 @@ pub fn sha3_512(m: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use crate::sha3::utils::decode_hex;
+    use crate::sha3::{types::Sha3Variant, utils::decode_hex};
 
     use super::*;
 
@@ -360,14 +360,13 @@ mod tests {
         SystemTime::now().duration_since(UNIX_EPOCH).unwrap()
     }
     
-    fn test_sha3_on_input(bytes: &[u8], expected_digest: &str, sha3_variant: &str){
+    fn test_sha3_on_input(bytes: &[u8], expected_digest: &str, sha3_variant: &Sha3Variant){
         let timestamp_start = get_timestamp();
         let computed_digest = match sha3_variant {
-            "sha3-224" => sha3_224(bytes),
-            "sha3-256" => sha3_256(bytes),
-            "sha3-384" => sha3_384(bytes),
-            "sha3-512" => sha3_512(bytes),
-            _ => panic!()
+            Sha3Variant::SHA3_224 => sha3_224(bytes),
+            Sha3Variant::SHA3_256 => sha3_256(bytes),
+            Sha3Variant::SHA3_384 => sha3_384(bytes),
+            Sha3Variant::SHA3_512 => sha3_512(bytes),
         };
         let duration = get_timestamp() - timestamp_start;
         println!("Execution time of sha3 function: {duration:?}");
@@ -378,7 +377,7 @@ mod tests {
 
     #[test]
     fn test_empty_string(){
-        test_sha3_on_input(&[], "a7ffc6f8bf1ed76651c14756a061d662f580ff4de43b49fa82d80a4b80f8434a", "sha3-256");
+        test_sha3_on_input(&[], "a7ffc6f8bf1ed76651c14756a061d662f580ff4de43b49fa82d80a4b80f8434a", &Sha3Variant::SHA3_256);
     }
 
     
@@ -389,7 +388,7 @@ mod tests {
 
     #[test]
     fn test_2_bytes(){
-        test_sha3_on_input(&decode_hex("e9").unwrap(), "f0d04dd1e6cfc29a4460d521796852f25d9ef8d28b44ee91ff5b759d72c1e6d6", "sha3-256");
+        test_sha3_on_input(&decode_hex("e9").unwrap(), "f0d04dd1e6cfc29a4460d521796852f25d9ef8d28b44ee91ff5b759d72c1e6d6", &Sha3Variant::SHA3_256);
     }
 
 
@@ -402,7 +401,7 @@ mod tests {
             .collect()  // gather them together into a vector
     }
     
-    fn test_rsp_file(filename: &str, sha3_variant: &str){
+    fn test_rsp_file(filename: &str, sha3_variant: &Sha3Variant){
         let lines = read_lines(filename);
         let n = lines.len();                
         println!("file read {filename} -> {n} lines");
@@ -442,27 +441,27 @@ mod tests {
 
     #[test]
     fn test_rsp_224_file(){
-        test_rsp_file("test_vectors/SHA3/SHA3_224ShortMsg.rsp", "sha3-224");
+        test_rsp_file("test_vectors/SHA3/SHA3_224ShortMsg.rsp", &Sha3Variant::SHA3_224);
     }
 
     #[test]
     fn test_rsp_256_file(){
-        test_rsp_file("test_vectors/SHA3/SHA3_256ShortMsg.rsp", "sha3-256");
+        test_rsp_file("test_vectors/SHA3/SHA3_256ShortMsg.rsp", &Sha3Variant::SHA3_256);
     }
 
     #[test]
     fn test_rsp_256_long_file(){
-        test_rsp_file("test_vectors/SHA3/SHA3_256LongMsg.rsp", "sha3-256");
+        test_rsp_file("test_vectors/SHA3/SHA3_256LongMsg.rsp", &Sha3Variant::SHA3_256);
     }
 
     #[test]
     fn test_rsp_384_file(){
-        test_rsp_file("test_vectors/SHA3/SHA3_384ShortMsg.rsp", "sha3-384");
+        test_rsp_file("test_vectors/SHA3/SHA3_384ShortMsg.rsp", &Sha3Variant::SHA3_384);
     }
 
     #[test]
     fn test_rsp_512_file(){
-        test_rsp_file("test_vectors/SHA3/SHA3_512ShortMsg.rsp", "sha3-512");
+        test_rsp_file("test_vectors/SHA3/SHA3_512ShortMsg.rsp", &Sha3Variant::SHA3_512);
     }
 
     #[test]

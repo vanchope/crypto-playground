@@ -1,3 +1,4 @@
+
 use crate::sha3::types::State;
 use crate::sha3::types::StateSlice;
 use crate::sha3::types::BitString;
@@ -60,64 +61,75 @@ pub fn bitstring_to_state(bits: &BitString) -> State {
     let w = 64;
     //let el = 6;
 
-    let mut A = State::with_capacity(w);
+    let mut a = State::with_capacity(w);
     for _k in 0..w {
         let state_slice: StateSlice = [[0; 5]; 5];
-        A.push(state_slice);
+        a.push(state_slice);
     }
 
     for x in 0..5 {
         for y in 0..5 {
             for z in 0..w {
-                A[z][x][y] = bits[w*(5*y+x)+z];
+                a[z][x][y] = bits[w*(5*y+x)+z];
             }
         }
     }    
-    A
+    a
 }
 
-pub fn state_to_bitstring(A: &State) -> BitString {
-    let w = A.len();    
+pub fn state_to_bitstring(a: &State) -> BitString {
+    let w = a.len();
     
     // w and b are hardcoded for now as per SHA3 definitions
     assert!(w==64); 
     let b = 1600;
 
-    let mut S = BitString::with_capacity(b);
+    let mut s = BitString::with_capacity(b);
     for _i in 0..b {
-        S.push(0);
+        s.push(0);
     }
     for x in 0..5 {
         for y in 0..5 {
             for z in 0..w {
                 // here, we just duplicate the inverse code of the opposite conversion function
-                S[w*(5*y+x)+z] = A[z][x][y];
+                s[w*(5*y+x)+z] = a[z][x][y];
             }
         }
     }
-    S
+    s
+}
+
+pub fn get_state_value(state_flat:&[u8], z:usize, x:usize, y:usize) -> u8 {
+    let w = state_flat.len() / 25;
+    state_flat[w*(5*y+x)+z]
+}
+
+pub fn set_state_value(state_flat:&mut [u8], z:usize, x:usize, y:usize, val: u8){
+    let w = state_flat.len() / 25;
+    state_flat[w*(5*y+x)+z] = val;
 }
 
 
+
 /// Returns a new truncated BitString by copying the first "s" bits.
-pub fn trunc(s: usize, X: &BitString) -> BitString {
-    let mut X1 = BitString::with_capacity(s);
+pub fn trunc(s: usize, x: &BitString) -> BitString {
+    let mut x1 = BitString::with_capacity(s);
     for i in 0..s {
-        X1.push(X[i]);
+        x1.push(x[i]);
     }
-    X1
+    x1
 }
 
 
 /// Returns a new BitString by prepending 0 to the beginning of the old BitString.
-pub fn prepend_zero(X: &BitString) -> BitString {
-    let len = X.len();
-    let mut X1 = BitString::with_capacity(len+1);
-    X1.push(0);
+pub fn prepend_zero(x: &BitString) -> BitString {
+    let len = x.len();
+    let mut x1 = BitString::with_capacity(len+1);
+    x1.push(0);
     for i in 0..len {
-        X1.push(X[i]);
+        x1.push(x[i]);
     }
-    X1
+    x1
 }
 
 /// Returns a new BitString of size w initialized to 0s.
@@ -157,10 +169,10 @@ pub fn concat_bitstrings(bs0: &[u8], bs1: &[u8]) -> BitString {
 }
 
 
-pub fn debug_state_as_bytes(title: &str, A: &State) {
-    let w = A.len();
+pub fn debug_state_as_bytes(title: &str, a: &State) {
+    let w = a.len();
     let len_bytes = w * 5 * 5 / 8;
-    let bit_str = state_to_bitstring(A);
+    let bit_str = state_to_bitstring(a);
     let byte_str = bitstring_to_bytestr(&bit_str);
     let hex = encode_hex(&byte_str);
     //println!("{title} : \n{hex}");
@@ -176,15 +188,15 @@ pub fn debug_state_as_bytes(title: &str, A: &State) {
     println!();
 }
 
-pub fn debug_state_as_lanes_of_integers(title: &str, A: &State) {
-    let w = A.len();
+pub fn debug_state_as_lanes_of_integers(title: &str, a: &State) {
+    let w = a.len();
     assert!(w==64);
     println!("{title} (as lanes):");
     for x in  0..5 {
         for y in 0..5 {
             let mut lane_bits = BitString::new();
             for z in 0..w {
-                lane_bits.push(A[z][x][y]);
+                lane_bits.push(a[z][x][y]);
             }
             // We display bits (a0 a1 a2 ...) as integer  ...a2a1a0.
             let mut lane_u64: u64 = 0;
@@ -211,14 +223,14 @@ mod tests {
         println!();
     }
 
-    fn debug_state(title: &str, A: &State) {
-        let w = A.len();
+    fn debug_state(title: &str, a: &State) {
+        let w = a.len();
         println!("{title} of w={w} :");
         println!("debug -- begin of state");
         for z in 0..w {
             for x in 0..5 {
                 for y in 0..5 {
-                    let el = A[z][x][y];
+                    let el = a[z][x][y];
                     print!("{el} ");
                 }
                 println!();
@@ -251,68 +263,67 @@ mod tests {
 
     #[test]
     fn test_bytestr_to_hex(){
-        let bytes = ByteString::from([0, 10, 32, 255]);
-        let hex = encode_hex(&bytes);
+        let bytestr = ByteString::from(vec![0, 10, 32, 255]);
+        let hex = encode_hex(&bytestr);
         println!("{hex}");
         assert_eq!(&hex.to_lowercase(), "000a20ff");
 
         let vec_2 = decode_hex(&hex).unwrap();
-        let bytes_2 = vec_2.as_slice();
-        assert_eq!(bytes_2, bytes);
+        assert_eq!(vec_2.as_slice(), bytestr.as_slice());
     }
 
     #[test]
     fn test_state_conversion(){
-        let mut S = BitString::new();
+        let mut s = BitString::new();
         let w = 64; // hardcoded for SHA3
         let bit_len = w * 5 * 5;
         
         for i in 0..bit_len {
-            S.push((i % 7 % 2) as u8); 
+            s.push((i % 7 % 2) as u8); 
         }
-        debug_vec("S", S.as_slice());
+        debug_vec("S", s.as_slice());
 
-        let A = bitstring_to_state(&S);
+        let a = bitstring_to_state(&s);
         //debug_state("A", &A);
-        debug_state_as_bytes("A", &A);
+        debug_state_as_bytes("A", &a);
 
-        let S1 = state_to_bitstring(&A);
-        assert_eq!(S1.as_slice(), S.as_slice());
+        let s1 = state_to_bitstring(&a);
+        assert_eq!(s1.as_slice(), s.as_slice());
     }
 
     #[test]
     fn test_truncate(){
-        let X = BitString::from([1, 0, 1, 0, 0]);
-        let X1 = trunc(2, &X);
+        let x = BitString::from(vec![1, 0, 1, 0, 0]);
+        let x1 = trunc(2, &x);
         let expected: [u8; 2] = [1, 0];
-        assert_eq!(expected, X1.as_slice());
+        assert_eq!(expected, x1.as_slice());
     }
 
     #[test]
     fn test_prepend_zero(){
-        let X = BitString::from([1, 1]);
-        let X1 = prepend_zero(&X);
+        let x = BitString::from(vec![1, 1]);
+        let x1 = prepend_zero(&x);
         let expected: [u8; 3] = [0, 1, 1];
-        assert_eq!(expected, X1.as_slice());
+        assert_eq!(expected, x1.as_slice());
     }
 
     #[test]
     fn test_xor_bitstrings(){
-        let X0 = BitString::from([0, 0, 1, 1]);
-        let X1 = BitString::from([0, 1, 0, 1]);
-        let expected = BitString::from([0, 1, 1, 0]);
+        let x0 = BitString::from(vec![0, 0, 1, 1]);
+        let x1 = BitString::from(vec![0, 1, 0, 1]);
+        let expected = BitString::from(vec![0, 1, 1, 0]);
 
-        let X2 = xor_bitstrings(&X0, &X1);
-        assert_eq!(expected.as_slice(), X2.as_slice());
+        let x2 = xor_bitstrings(&x0, &x1);
+        assert_eq!(expected.as_slice(), x2.as_slice());
     }
 
     #[test]
     fn test_concat_bitstrings(){
-        let X0 = BitString::from([0, 0, 1, 1]);
-        let X1 = BitString::from([0, 1, 0, 1]);
-        let expected = BitString::from([0, 0, 1, 1, 0, 1, 0, 1]);
+        let x0 = BitString::from(vec![0, 0, 1, 1]);
+        let x1 = BitString::from(vec![0, 1, 0, 1]);
+        let expected = BitString::from(vec![0, 0, 1, 1, 0, 1, 0, 1]);
 
-        let X2 = concat_bitstrings(&X0, &X1);
-        assert_eq!(expected.as_slice(), X2.as_slice());
+        let x2 = concat_bitstrings(&x0, &x1);
+        assert_eq!(expected.as_slice(), x2.as_slice());
     }
 }
