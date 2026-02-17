@@ -1,5 +1,6 @@
 use derive_more::{Deref, DerefMut, From};
 
+#[derive(Clone, Copy)]
 pub enum Sha3Variant {
     SHA3_224,
     SHA3_256,

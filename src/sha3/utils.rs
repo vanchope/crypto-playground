@@ -192,20 +192,29 @@ pub fn debug_state_as_lanes_of_integers(title: &str, a: &State) {
     }
 }
 
+pub fn debug_vec<T: std::fmt::Debug>(title: &str, ar: &[T])
+where
+    T: std::fmt::Debug + Copy,
+{
+    let len = ar.len();
+    println!("{title} of len {len} :");
+    for i in 0..len {
+        let el = ar[i];
+        if i==len-1 {
+            print!("{:?}", el);
+        }else{
+            print!("{:?}, ", el);
+        }
+    }
+    println!();
+}
+
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn debug_vec(title: &str, ar: &[u8]) {
-        let len = ar.len();
-        println!("{title} of len {len} :");
-        for i in 0..len {
-            let el = ar[i];
-            print!("{el} ");
-        }
-        println!();
-    }
+    
 
     fn debug_state(title: &str, a: &State) {
         let w = a.len();

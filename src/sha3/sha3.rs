@@ -1,6 +1,7 @@
 
 use crate::sha3::constants::KECCAK_B;
 use crate::sha3::constants::KECCAK_NR;
+use crate::sha3::constants::RC_PRECOMPUTED;
 use crate::sha3::constants::RHO_OFFSETS;
 use crate::sha3::constants::get_el_from_b;
 use crate::sha3::constants::get_w_from_b;
@@ -26,20 +27,27 @@ use crate::sha3::utils::xor_bitstrings;
 pub struct Sha3 {
     sha3_variant: Sha3Variant,
     is_finalized: bool,
-}
 
+    // here, we store the leftover bytes that do not fit into the full block while updating
+    buffer: ByteString,
+}
 
 impl Sha3 {
     pub fn new(sha3_variant: Sha3Variant) -> Self {
         Sha3 {
             sha3_variant,
             is_finalized: false,
+            buffer: ByteString::new(),
         }
     }
 
     pub fn update(&mut self, bytestr: &ByteString) {
         assert!(!self.is_finalized);
         todo!()
+    }
+
+    fn update_full_blocks(&mut self, bytestr: &ByteString){
+        
     }
 
     pub fn finalize(&mut self) {
@@ -51,6 +59,33 @@ impl Sha3 {
     pub fn digest(self) -> ByteString {
         todo!()
     }
+
+
+    /// this computes the digest in one shot
+    pub fn compute_digest(self, m: &[u8]) -> ByteString {
+        // A SHA3 function from the family is defined as follows:
+        //     e.g., SHA3-256(M) = KECCAK [512] (M || 01, 256)
+        let (keccac_c, keccac_d) = match self.sha3_variant {
+            Sha3Variant::SHA3_224 => (448, 224),
+            Sha3Variant::SHA3_256 => (512, 256),
+            Sha3Variant::SHA3_384 => (768, 384),
+            Sha3Variant::SHA3_512 => (1024, 512),
+        };
+        let digest = self.sha3_family(m, keccac_c, keccac_d);
+        digest
+    }
+
+
+    // two-bit suffixes are applied to M in the sha3 family of functions
+    fn sha3_family(self, m: &[u8], keccak_c: usize, keccak_d: usize) -> ByteString {
+        let mut n = bytestr_to_bitstring(m);
+        n.push(0);
+        n.push(1);
+        let digest_bits = keccak(keccak_c, &n, keccak_d);
+        let digest_bytes = bitstring_to_bytestr(&digest_bits);
+        digest_bytes
+    }
+
 }
 
 /// 1st transformation function (Alg 1., p.11)
@@ -87,29 +122,39 @@ fn theta(a: &mut State) {
 /// 2nd transformation function (Alg 2., p.12)
 fn rho(a: &State) -> State {
     let w = a.len();
-    let mut cache = new_state(w);
+    let mut a1 = new_state(w);
     
     //Step 1.
     for z in 0..w {
-        cache[z][0][0] = a[z][0][0];
+        a1[z][0][0] = a[z][0][0];
     }
 
     //Step 2.
     let (mut x, mut y) = (1, 0);
+
+    // precompute next_y
+    let mut rho_next_y: [usize; 24] = [0; 24];
+    for t in 0..24 {
+        rho_next_y[t] = (2*x + 3*y) % 5;
+        (x, y) = (y, rho_next_y[t]);
+    }
+
     
     //Step 3.  For t from 0 to 23:
-    for _t in 0..24 {
-        for z in 0..w {            
-            // z1 = z - (t+1)*(t+2)/2 mod w            
+    for z in 0..w {
+        for t in 0..24 {
+            // z1 = z - (t+1)*(t+2)/2 mod w
             // for sha3 with w=1600, this is equivalent to the line below
             let z1 = (z - RHO_OFFSETS[x][y] + w) % w;
-            cache[z][x][y] = a[z1][x][y];
+            a1[z][x][y] = a[z1][x][y];
+            
+            //(x, y) = (y, (2*x + 3*y) % 5);
+            (x, y) = (y, rho_next_y[t]);
         }
-        (x, y) = (y, (2*x + 3*y) % 5);
     }
 
     // Step 3. Return A1
-    cache
+    a1
 }
 
 
@@ -185,6 +230,20 @@ fn rc_fun(t: usize) -> u8 {
 }
 
 
+fn rc_fun_precomputed(t: usize) -> u8 {
+    
+    let t0 = t % 255;
+
+    // this is equivalent to t0 / 32
+    let i = t0 >> 5;  
+    
+    // this is equivalent to t0 % 32
+    let offset = t0 & 31;
+    
+    ((RC_PRECOMPUTED[i] >> offset) & 1) as u8
+}
+
+
 /// 5th transformation (Alg 6.)
 fn iota(a: &mut State, ir: usize, el: usize) {
     let w = a.len();
@@ -196,7 +255,7 @@ fn iota(a: &mut State, ir: usize, el: usize) {
 
     // Step 3. For j from 0 to l, let RC[2**j – 1] = rc(j + 7ir)
     for j in 0..(el+1) {
-        rc[(1<<j)-1] = rc_fun(j + 7 * ir);
+        rc[(1<<j)-1] = rc_fun_precomputed(j + 7 * ir);
     }
 
     // Step 4.
@@ -257,12 +316,9 @@ fn keccak_p(b: usize, nr: usize, s: &BitString) -> BitString {
 //
 // c : 
 fn keccak(keccak_c: usize, n_bitstr: &BitString, d: usize) -> BitString {
-    // hardcoded for SHA3
-    let b = KECCAK_B;
-    let nr = KECCAK_NR;
 
-    assert!(b > keccak_c);
-    let r: usize = b - keccak_c;
+    assert!(KECCAK_B > keccak_c);
+    let r: usize = KECCAK_B - keccak_c;
 
     //Step 1 of SPONGE
     let pad = pad101(r, n_bitstr.len());
@@ -271,28 +327,25 @@ fn keccak(keccak_c: usize, n_bitstr: &BitString, d: usize) -> BitString {
     
     //Steps 2-3
     let n = p.len() / r;
-    let c = b - r; // === keccak_c
+    let c = KECCAK_B - r; // === keccak_c
 
     //Step 4. Split P to n substrings of len r
     //let mut Ps: Vec<BitString> = Vec::new();
     let mut ps: Vec<&[u8]> = Vec::new();
     for i in 0..n {
         let slice = &p[r*i..r*(i+1)];
-        //let mut Pi = BitString::with_capacity(r);
-        //slice.iter().for_each(|el| Pi.push(*el));
-        //Ps.push(Pi);
         ps.push(slice);
     }   
 
     //Step 5.
-    let mut s = new_bitstring(b);
+    let mut s = new_bitstring(KECCAK_B);
 
     //Step 6.  For i from 0 to n-1, let <..>
     for i in 0..n {
         let zero = new_bitstring(c);
         let pi_zero = concat_bitstrings(&ps[i], &zero);
         let f_input = xor_bitstrings(&s, &pi_zero);
-        s = keccak_p(b, nr, &f_input);
+        s = keccak_p(KECCAK_B, KECCAK_NR, &f_input);
     }
     
     //Step 7.
@@ -308,16 +361,11 @@ fn keccak(keccak_c: usize, n_bitstr: &BitString, d: usize) -> BitString {
         }
 
         //Step 10. update S and go to Step 8
-        s = keccak_p(b, nr, &s);
+        s = keccak_p(KECCAK_B, KECCAK_NR, &s);
     }
 
 }
 
-
-
-fn keccak_init(){
-    todo!()
-}
 
 /// Alg. 9
 /// output a string of the form 10*1
@@ -340,37 +388,10 @@ fn pad101(x: usize,  m: usize) -> BitString {
     res
 }
 
-// two-bit suffixes are applied to M in the sha3 family of functions
-pub fn sha3_family(m: &[u8], keccak_c: usize, keccak_d: usize) -> ByteString {
-    let mut n = bytestr_to_bitstring(m);
-    n.push(0);
-    n.push(1);
-    let digest_bits = keccak(keccak_c, &n, keccak_d);
-    let digest_bytes = bitstring_to_bytestr(&digest_bits);
-    digest_bytes
-}
-
-pub fn sha3_224(m:  &[u8]) -> ByteString {
-    sha3_family(m, 448, 224)
-}
-
-/// The function is defined as follows: SHA3-256(M) = KECCAK [512] (M || 01, 256)
-pub fn sha3_256(m: &[u8]) -> ByteString {
-    sha3_family(m, 512, 256)
-}
-
-pub fn sha3_384(m: &[u8]) -> ByteString {
-    sha3_family(m,  768, 384)
-}
-
-pub fn sha3_512(m: &[u8]) -> ByteString {
-    sha3_family(m,  1024, 512)
-}
-
 
 #[cfg(test)]
 mod tests {
-    use crate::sha3::{types::Sha3Variant};
+    use crate::sha3::{types::Sha3Variant, utils::debug_vec};
 
     use super::*;
 
@@ -378,14 +399,10 @@ mod tests {
         SystemTime::now().duration_since(UNIX_EPOCH).unwrap()
     }
     
-    fn test_sha3_on_input(bytes: &[u8], expected_digest: &str, sha3_variant: &Sha3Variant){
+    fn test_sha3_on_input(bytes: &[u8], expected_digest: &str, sha3_variant: Sha3Variant){
         let timestamp_start = get_timestamp();
-        let computed_digest = match sha3_variant {
-            Sha3Variant::SHA3_224 => sha3_224(bytes),
-            Sha3Variant::SHA3_256 => sha3_256(bytes),
-            Sha3Variant::SHA3_384 => sha3_384(bytes),
-            Sha3Variant::SHA3_512 => sha3_512(bytes),
-        };
+        let mut sha3 = Sha3::new(sha3_variant);
+        let computed_digest = sha3.compute_digest(bytes);
         let computed_digest_hex = hex::encode(&computed_digest.as_slice());
         let duration = get_timestamp() - timestamp_start;
         println!("Execution time of sha3 function: {duration:?}");
@@ -396,7 +413,7 @@ mod tests {
 
     #[test]
     fn test_empty_string(){
-        test_sha3_on_input(&[], "a7ffc6f8bf1ed76651c14756a061d662f580ff4de43b49fa82d80a4b80f8434a", &Sha3Variant::SHA3_256);
+        test_sha3_on_input(&[], "a7ffc6f8bf1ed76651c14756a061d662f580ff4de43b49fa82d80a4b80f8434a", Sha3Variant::SHA3_256);
     }
 
     
@@ -407,11 +424,11 @@ mod tests {
 
     #[test]
     fn test_2_bytes(){
-        test_sha3_on_input(&hex::decode("e9").unwrap(), "f0d04dd1e6cfc29a4460d521796852f25d9ef8d28b44ee91ff5b759d72c1e6d6", &Sha3Variant::SHA3_256);
+        test_sha3_on_input(&hex::decode("e9").unwrap(), "f0d04dd1e6cfc29a4460d521796852f25d9ef8d28b44ee91ff5b759d72c1e6d6", Sha3Variant::SHA3_256);
     }
 
 
-    use std::{fs::read_to_string, time::{Duration, SystemTime, UNIX_EPOCH}};
+    use std::{fs::read_to_string, time::{Duration, SystemTime, UNIX_EPOCH}, u128};
     fn read_lines(filename: &str) -> Vec<String> {
         read_to_string(filename)
             .unwrap()  // panic on possible file-reading errors
@@ -420,7 +437,7 @@ mod tests {
             .collect()  // gather them together into a vector
     }
     
-    fn test_rsp_file(filename: &str, sha3_variant: &Sha3Variant){
+    fn test_rsp_file(filename: &str, sha3_variant: Sha3Variant){
         let lines = read_lines(filename);
         let n = lines.len();                
         println!("file read {filename} -> {n} lines");
@@ -460,27 +477,27 @@ mod tests {
 
     #[test]
     fn test_rsp_224_file(){
-        test_rsp_file("test_vectors/SHA3/SHA3_224ShortMsg.rsp", &Sha3Variant::SHA3_224);
+        test_rsp_file("test_vectors/SHA3/SHA3_224ShortMsg.rsp", Sha3Variant::SHA3_224);
     }
 
     #[test]
     fn test_rsp_256_file(){
-        test_rsp_file("test_vectors/SHA3/SHA3_256ShortMsg.rsp", &Sha3Variant::SHA3_256);
+        test_rsp_file("test_vectors/SHA3/SHA3_256ShortMsg.rsp", Sha3Variant::SHA3_256);
     }
 
     #[test]
     fn test_rsp_256_long_file(){
-        test_rsp_file("test_vectors/SHA3/SHA3_256LongMsg.rsp", &Sha3Variant::SHA3_256);
+        test_rsp_file("test_vectors/SHA3/SHA3_256LongMsg.rsp", Sha3Variant::SHA3_256);
     }
 
     #[test]
     fn test_rsp_384_file(){
-        test_rsp_file("test_vectors/SHA3/SHA3_384ShortMsg.rsp", &Sha3Variant::SHA3_384);
+        test_rsp_file("test_vectors/SHA3/SHA3_384ShortMsg.rsp", Sha3Variant::SHA3_384);
     }
 
     #[test]
     fn test_rsp_512_file(){
-        test_rsp_file("test_vectors/SHA3/SHA3_512ShortMsg.rsp", &Sha3Variant::SHA3_512);
+        test_rsp_file("test_vectors/SHA3/SHA3_512ShortMsg.rsp", Sha3Variant::SHA3_512);
     }
 
     #[test]
@@ -489,8 +506,33 @@ mod tests {
         let filename = "test/test_file.txt";
         let data = fs::read(filename).unwrap();
         let data_bytes = data.len();
-        let computed_digest = hex::encode(sha3_256(&data).as_slice()).to_lowercase();
+        let sha3_256 = Sha3::new(Sha3Variant::SHA3_256);
+        let computed_digest = hex::encode(sha3_256.compute_digest(&data).as_slice()).to_lowercase();
         println!("reading file '{filename}' => len {data_bytes} bytes; bytes => {data:?} \n: digest = {computed_digest}");
+    }
+
+    #[test]
+    fn test_rc_fun(){
+        let mut rc_cache = [0u32; 256/32];
+        for t in 0..255 {
+            let rc = rc_fun(t);
+            //println!("rc({t}) = {rc}");
+            let i = t / 32;
+            let offset = t % 32;
+            rc_cache[i] = rc_cache[i] ^ ((rc as u32) << offset);
+        }
+        debug_vec("rc_precomputed", &rc_cache);
+        // these recomputed values are stored in constants.rs 
+        for t in 255..510 {
+            let rc2 = rc_fun(t);
+            // println!("rc({t}) = {rc2}");
+            assert_eq!(rc2, rc_fun(t-255));
+        }
+        for t in 0..1000 {
+            let rc = rc_fun(t);
+            let rc_precomputed = rc_fun_precomputed(t);
+            assert_eq!(rc, rc_precomputed);
+        }
     }
  
 }
